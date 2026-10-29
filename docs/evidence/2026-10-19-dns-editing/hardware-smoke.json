@@ -1,0 +1,8 @@
+{
+  "manualDNSUnchanged": true,
+  "source": "systemDefault",
+  "primaryInterface": "en0",
+  "nativeAuthorizationExercised": false,
+  "realDNSSaveExercised": false,
+  "packageSignatureVerified": true
+}

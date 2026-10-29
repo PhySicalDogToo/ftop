@@ -1,0 +1,10 @@
+{
+  "date": "2026-10-20",
+  "source_sha256": "38bb7b33b8f82e9637eaaa446da0f509cf5bb4acf0041307f8de4a07158b9c51",
+  "instrumentation": "clang AddressSanitizer, -O1 -g -fno-omit-frame-pointer",
+  "rapid_create_copy_destroy_cycles": 20,
+  "ordinary_user": true,
+  "result": "completed without AddressSanitizer reports",
+  "leak_detection": false,
+  "scope": "Production C observer lifecycle harness, not the entire app; completed query behavior is covered by native-smoke.json."
+}

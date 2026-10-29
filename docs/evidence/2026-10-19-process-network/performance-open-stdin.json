@@ -1,0 +1,20 @@
+{
+  "method": "one persistent nettop, child CPU includes startup and shutdown; Python wrapper separately counted",
+  "runs": [
+    {
+      "collector_total_cpu_percent_one_core": 1.632,
+      "csv_frames": 0,
+      "gentle": false,
+      "interval_seconds": 2,
+      "nettop_cpu_percent_one_core": 1.571,
+      "nettop_cpu_seconds": 0.12721,
+      "nettop_rss_mean_mib": 5.043,
+      "nettop_rss_peak_mib": 5.969,
+      "stdin_kept_open": true,
+      "wall_seconds": 8.095,
+      "wrapper_cpu_percent_one_core": 0.061,
+      "wrapper_cpu_seconds": 0.00491,
+      "wrapper_rss_peak_mib": 16.281
+    }
+  ]
+}

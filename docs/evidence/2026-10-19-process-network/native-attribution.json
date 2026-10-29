@@ -1,0 +1,90 @@
+{
+  "after": {
+    "active_tun_enabled": true,
+    "configuration_unchanged_during_read": true,
+    "mihomo_confirmed": true,
+    "saved_dns_mode": "redir-host",
+    "saved_tun_enabled": true
+  },
+  "before": {
+    "active_tun_enabled": true,
+    "configuration_unchanged_during_read": true,
+    "mihomo_confirmed": true,
+    "saved_dns_mode": "redir-host",
+    "saved_tun_enabled": true
+  },
+  "experiments": [
+    {
+      "curl_exit": 28,
+      "download_body_bytes": 0,
+      "experiment": "public_https_get_2mib",
+      "http_status": 0,
+      "observation": {
+        "completed_frames": 4,
+        "roles": [
+          {
+            "baseline_only_sources": 0,
+            "live_uid_matches": 3,
+            "peak_download_Bps": 0.0,
+            "peak_upload_Bps": 0.0,
+            "received_delta": 0,
+            "sent_delta": 0
+          },
+          {
+            "baseline_only_sources": 0,
+            "live_uid_matches": 729,
+            "peak_download_Bps": 42368.23,
+            "peak_upload_Bps": 95138.32,
+            "received_delta": 94086,
+            "sent_delta": 428469
+          }
+        ]
+      },
+      "observer_exit": 0,
+      "role_order": [
+        "original_client",
+        "clash_core_concurrent"
+      ],
+      "transfer_seconds": 5.005705,
+      "upload_body_bytes": 0
+    },
+    {
+      "curl_exit": 0,
+      "download_body_bytes": 0,
+      "experiment": "local_tcp_post_2mib",
+      "http_status": 200,
+      "observation": {
+        "completed_frames": 6,
+        "roles": [
+          {
+            "baseline_only_sources": 0,
+            "live_uid_matches": 5,
+            "peak_download_Bps": 55.0,
+            "peak_upload_Bps": 327146.07,
+            "received_delta": 110,
+            "sent_delta": 1899504
+          },
+          {
+            "baseline_only_sources": 0,
+            "live_uid_matches": 1098,
+            "peak_download_Bps": 4611.71,
+            "peak_upload_Bps": 618083.09,
+            "received_delta": 29941,
+            "sent_delta": 2945372
+          }
+        ]
+      },
+      "observer_exit": 0,
+      "role_order": [
+        "original_client",
+        "clash_core_concurrent"
+      ],
+      "transfer_seconds": 9.134301,
+      "upload_body_bytes": 2097152
+    }
+  ],
+  "public_get_body_bytes_across_probe_runs": 2097152,
+  "public_get_body_limit_bytes_this_run": 2097152,
+  "runtime_configuration_unchanged": true,
+  "scope": "Production C socket counters only. First observations/short-lived sources can be missed. Proxy activity is concurrent background-inclusive, never deduplicated or physical throughput."
+}

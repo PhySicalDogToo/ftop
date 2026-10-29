@@ -15,7 +15,7 @@ import Testing
     ]
     static let moduleSets: [[ModuleID]] = [
         ModuleID.stacked + ModuleID.added, ModuleID.stacked, ModuleID.stacked + [.gpu], ModuleID.stacked + [.power], [.cpu, .memory, .network, .gpu, .power],
-        [.cpu, .memory, .network], [.memory, .processes, .gpu, .power], [.processes, .cpu],
+        [.cpu, .memory, .network], [.memory, .processes, .gpu, .power], [.processes, .cpu], [.cpu, .dns], [.cpu, .memory, .dns],
     ]
 
     static func model(_ machine: MachineShape, _ modules: [ModuleID], language: Language = .zh) -> PanelModel {
@@ -26,12 +26,14 @@ import Testing
         config.language = language
         model.apply(config)
         model.ingest(Snapshot.sample(groups: machine.groups))
+        model.setDNS(DNSState(servers: ["114.114.114.114", "8.8.8.8"], source: .systemDefault))
         return model
     }
 
     static func scene(_ model: PanelModel, _ choice: LayoutChoice, snapshot: Snapshot?) -> Scene {
-        SceneBuilder(snapshot: snapshot, machine: model.machine, modules: model.config.shown, style: model.style(scale: choice.scale))
-            .build(choice)
+        var builder = SceneBuilder(snapshot: snapshot, machine: model.machine, modules: model.config.shown, style: model.style(scale: choice.scale))
+        builder.dns = model.dns
+        return builder.build(choice)
     }
 
     /// Everything drawn lies inside the scene, and no two pieces of text overlap.

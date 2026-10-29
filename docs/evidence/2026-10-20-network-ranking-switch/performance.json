@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-20",
+  "scope": "Isolated visible release preview, download ranking, 1-second refresh, single-column five-row layout; panel and direct helper included. Native lifecycle harness and builds finished before measurement. No extra network traffic. UI matches final bundle; later 10-second differencing guard verified separately by native smoke.",
+  "interval_seconds": 3,
+  "samples": [
+    {
+      "cpu_percent_one_core": 2.1,
+      "top_mem_mib": 43.4375
+    },
+    {
+      "cpu_percent_one_core": 1.6,
+      "top_mem_mib": 43.4531
+    },
+    {
+      "cpu_percent_one_core": 1.6,
+      "top_mem_mib": 43.4531
+    },
+    {
+      "cpu_percent_one_core": 1.3,
+      "top_mem_mib": 43.4531
+    },
+    {
+      "cpu_percent_one_core": 2.4,
+      "top_mem_mib": 43.4531
+    }
+  ],
+  "cpu_mean": 1.8,
+  "memory_metric": "Summed top MEM, approximate MiB, not independently measured RSS",
+  "budget_note": "The under-1%-of-one-core reference target remains unmet. This is not a controlled before/after comparison or worst-case bound."
+}

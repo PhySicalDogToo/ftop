@@ -1,0 +1,18 @@
+CPU MODE — 5-second wall-clock stack sampling at requested 1 ms interval.
+Counts include waiting threads; these are observed call paths, not CPU percentages.
+SceneBuilder.columns(_:extra:)  (in FtopPanel) + 2308  SceneBuilder.swift:797
+closure #3 in SceneBuilder.columns(_:extra:)  (in FtopPanel) + 260  SceneBuilder.swift:799
+SceneBuilder.columns(_:extra:)  (in FtopPanel) + 2584  SceneBuilder.swift:805
+IOReportCreateSamples  (in libIOReport.dylib) + 48
+DOWNLOAD MODE — 5-second wall-clock stack sampling at requested 1 ms interval.
+Counts include waiting threads; these are observed call paths, not CPU percentages.
+SceneBuilder.columns(_:extra:)  (in FtopPanel) + 2308  SceneBuilder.swift:797
+closure #3 in SceneBuilder.columns(_:extra:)  (in FtopPanel) + 260  SceneBuilder.swift:799
+SceneBuilder.columns(_:extra:)  (in FtopPanel) + 2584  SceneBuilder.swift:805
+SceneBuilder.columns(_:extra:)  (in FtopPanel) + 5376  SceneBuilder.swift:809
+ProcessNetworkProvider.merged(base:rows:)  (in FtopPanel) + 344  ProcessNetworkProvider.swift:277
+ProcessNetworkProvider.merged(base:rows:)  (in FtopPanel) + 372  ProcessNetworkProvider.swift:297
+ProcessNetworkProvider.merged(base:rows:)  (in FtopPanel) + 388  ProcessNetworkProvider.swift:298
+__59-[NWStatisticsManager dispatchDidReceiveCounts:fromUpdate:]_block_invoke  (in NetworkStatistics) + 108
+__53-[NWStatisticsManager dispatchDidReceiveDescription:]_block_invoke  (in NetworkStatistics) + 108
+IOReportCreateSamples  (in libIOReport.dylib) + 48

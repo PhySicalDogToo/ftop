@@ -1,0 +1,78 @@
+{
+  "date": "2026-10-20",
+  "build": 11,
+  "method": "scripts/perf.sh, five three-second top intervals after its initial lifetime sample; panel and direct helper",
+  "configuration": "Fresh isolated normal panel, 1s refresh, download ranking, legacy cpu/memory/processes/network order; final native screenshot confirmed three process rows after all basic readings",
+  "samples": [
+    {
+      "panel": {
+        "cpu_percent": 0.9,
+        "top_memory_mib": 28.0
+      },
+      "helper": {
+        "cpu_percent": 0.1,
+        "top_memory_mib": 2.109375
+      },
+      "combined_cpu_percent": 1.0,
+      "combined_top_memory_mib": 30.109
+    },
+    {
+      "panel": {
+        "cpu_percent": 1.2,
+        "top_memory_mib": 28.0
+      },
+      "helper": {
+        "cpu_percent": 0.2,
+        "top_memory_mib": 2.125
+      },
+      "combined_cpu_percent": 1.4,
+      "combined_top_memory_mib": 30.125
+    },
+    {
+      "panel": {
+        "cpu_percent": 0.8,
+        "top_memory_mib": 29.0
+      },
+      "helper": {
+        "cpu_percent": 0.1,
+        "top_memory_mib": 2.125
+      },
+      "combined_cpu_percent": 0.9,
+      "combined_top_memory_mib": 31.125
+    },
+    {
+      "panel": {
+        "cpu_percent": 1.5,
+        "top_memory_mib": 29.0
+      },
+      "helper": {
+        "cpu_percent": 0.2,
+        "top_memory_mib": 2.15625
+      },
+      "combined_cpu_percent": 1.7,
+      "combined_top_memory_mib": 31.156
+    },
+    {
+      "panel": {
+        "cpu_percent": 1.2,
+        "top_memory_mib": 29.0
+      },
+      "helper": {
+        "cpu_percent": 0.0,
+        "top_memory_mib": 2.15625
+      },
+      "combined_cpu_percent": 1.2,
+      "combined_top_memory_mib": 31.156
+    }
+  ],
+  "combined_cpu_range_percent": [
+    0.9,
+    1.7
+  ],
+  "combined_cpu_mean_percent": 1.24,
+  "combined_top_memory_range_mib": [
+    30.109,
+    31.156
+  ],
+  "limitations": "top MEM is not independently measured RSS. Short background-active run is not a controlled before/after benchmark. Under-1% CPU reference target still unmet. Earlier zero-CPU attempt without verified visibility excluded."
+}

@@ -1,0 +1,13 @@
+{
+  "method": "Unprivileged standalone native NetworkStatistics prototype; six serial-queue description/count queries, two-second spacing; /usr/bin/time -l. No sudo or network configuration changes.",
+  "wall_seconds": 12.04,
+  "user_cpu_seconds": 0.06,
+  "system_cpu_seconds": 0.01,
+  "approximate_cpu_percent_one_core": 0.58,
+  "maximum_resident_bytes": 5210112,
+  "sources_observed": 617,
+  "description_callbacks": 2979,
+  "count_callbacks": 2979,
+  "query_completions": 6,
+  "limitation": "Includes startup and is a prototype measurement, not final panel performance or full protocol-coverage proof. The production implementation is measured separately."
+}

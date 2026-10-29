@@ -1,0 +1,9 @@
+{
+  "source": "systemDefault",
+  "server_count": 1,
+  "primary_interface": "en0",
+  "dns_settings_unchanged": true,
+  "unsupported_write_flag_rejected": true,
+  "location_requested": false,
+  "hostname_query_performed": false
+}

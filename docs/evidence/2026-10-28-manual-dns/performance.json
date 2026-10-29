@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-28",
+  "build": 13,
+  "scope": "Final release preview, visibly verified 617x501 pt detailed single-column three-row CPU ranking, 1-second refresh, motion on, menu bar off, read-only DNS display on. App and its direct helper included. No writes or extra network traffic. Busy background workload; not a controlled before/after comparison.",
+  "samples": [
+    {
+      "cpu_percent_one_core": 2.3,
+      "top_mem_mib": 30.9844,
+      "roles": [
+        "FtopPanel",
+        "ftop-helper"
+      ]
+    },
+    {
+      "cpu_percent_one_core": 1.0,
+      "top_mem_mib": 31.0469,
+      "roles": [
+        "FtopPanel",
+        "ftop-helper"
+      ]
+    },
+    {
+      "cpu_percent_one_core": 0.6,
+      "top_mem_mib": 32.0781,
+      "roles": [
+        "FtopPanel",
+        "ftop-helper"
+      ]
+    },
+    {
+      "cpu_percent_one_core": 1.0,
+      "top_mem_mib": 32.125,
+      "roles": [
+        "FtopPanel",
+        "ftop-helper"
+      ]
+    },
+    {
+      "cpu_percent_one_core": 1.4,
+      "top_mem_mib": 32.125,
+      "roles": [
+        "FtopPanel",
+        "ftop-helper"
+      ]
+    }
+  ],
+  "mean_cpu": 1.26,
+  "memory_note": "Summed top MEM, not independently measured RSS.",
+  "budget_note": "The under-1%-of-one-core reference CPU target remains unmet."
+}

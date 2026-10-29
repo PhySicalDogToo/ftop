@@ -503,6 +503,183 @@ and nothing else. The GPU is a ring" and the GPU's pair of usage and memory abov
 - Cost: sizes changed. The compact layout's second column is wider (the memory row now
   holds the temperature); the detailed layout is wider by the GPU's column.
 
+## Historical amendment: read-only DNS inspection (2026-10-19)
+
+The owner requested the first stage of integrating the separate Wi-Fi DNS tool:
+show current DNS and its source, without managing it.
+
+- More adds a DNS action. It reads a fresh snapshot and opens a native read-only
+  menu beside the control block, using the same system-menu affordance as the
+  other value rows. There is no second status item or settings window.
+- Show full IPv4 and IPv6 addresses, their source, and the relevant service and
+  interface. A service fallback is explicitly a reference, never an assertion
+  about the system default. Missing manual settings do not establish DHCP.
+- The monitor scene, its adaptive layout, and the left-click behavior do not
+  change. Nothing is added to the per-sample rendering or sampling path.
+- No SSID lookup, location request, DNS write, DNS query, proxy configuration,
+  automatic switching, or migration of the separate app is part of this stage.
+
+## Historical amendment: explicit DNS editing (2026-10-19)
+
+The owner requested DNS editing as the next stage after inspection.
+
+- The DNS menu adds Edit DNS. Opening it reads the current physical network
+  service again and shows a temporary native editor for automatic or custom
+  addresses. Save is explicit; closing or canceling performs no write.
+- Native text controls need focus and selection, so the editor is a compact
+  temporary panel rather than a new permanent settings surface. It does not
+  replace the unified control block, add a status item, or change the monitor
+  Scene and adaptive layout.
+- Identify the affected network service and interface. Preserve drafts after a
+  failed save. During authorization, commit, apply and verification, disable
+  dismissal and app termination to avoid abandoning an in-flight operation.
+- Automatic means removing the selected service's manual server addresses. It
+  does not assert that DHCP is the sole resolver source. A VPN or another DNS
+  manager can still override effective DNS.
+- This stage does not add SSID rules, automatic switching, proxy changes, or a
+  recurring worker. The CLI inspection command remains read-only.
+
+## Superseded DNS scope: one-shot system editor (2026-10-28)
+
+This replaces the Wi-Fi rules and Clash/Mihomo/TUN cooperation amendment of
+2026-10-19. Those features are retired; the old plan and evidence are historical,
+not instructions for the current product.
+
+- Keep current DNS addresses/source in the panel, hover and detail menu. The only
+  action in that menu opens the manual editor for the current physical service.
+- The editor offers Automatic (remove manual addresses), Custom DNS, address input
+  and Save. Opening/closing performs no write. Save is one explicit native
+  transaction; there are no SSID rules, execution state or proxy-client controls.
+- Automatic deletes only ServerAddresses, including an existing empty array.
+  Preserve every other DNS field. VPN/domain/interface resolvers can still apply;
+  automatic is not a promise to use DHCP alone.
+- Keep immutable service/location/configuration baselines, native authorization,
+  a non-waiting preferences lock, conflict checks and commit/apply/readback.
+  Failure preserves the draft and states whether storage is unchanged, saved or
+  unknown. Uncertain/conflicted baselines require closing and reopening.
+- After success keep a concise verified-result message in the editor, publish the
+  fresh system DNS snapshot and request a read-only monitor refresh.
+- Remove automation permissions, timers, wake observers, persistent rule stores,
+  backup/reload/adaptation paths and all proxy-client detection/configuration.
+  Read-only DNSStatusMonitor notifications/fallback and the hardware monitor's
+  existing sleep/wake lifecycle remain; they cannot write DNS.
+
+## Current DNS scope: event-driven Wi-Fi rules (2026-10-28)
+
+The owner subsequently requested exact Wi-Fi-name rules again. This supersedes
+only the one-shot-only boundary above. Proxy-client cooperation remains retired.
+
+- The existing current-DNS display and panel hover remain. More contains one
+  **Wi-Fi DNS rules** row: its native tooltip shows the latest system DNS addresses
+  and source, and its click opens the rules panel directly. There is no intermediate
+  details menu or explicit current-service editor in ftop; one-off manual changes
+  belong in macOS Network settings.
+- Each rule matches one SSID exactly, including case and spaces, and selects either
+  Automatic (delete manual ServerAddresses) or a validated custom IPv4/IPv6 list.
+  Duplicate SSIDs are rejected. One separate default rule is always present and
+  cannot be deleted; an exact rule wins, otherwise every identifiable Wi-Fi uses
+  the default. Redacted/disconnected Wi-Fi and Ethernet leave DNS unchanged.
+- The default rule has the same Automatic/Custom choices and visual language as an
+  exact rule, but no SSID or remove action. Custom addresses preserve input order.
+  Its concise help calls the first address preferred and the second alternate while
+  stating that macOS does not guarantee strict primary/backup failover.
+- Save & Apply validates and stores the complete draft, explicitly requests Wi-Fi
+  name access when needed, obtains native session authorization, and evaluates the
+  current connection once. Subsequent evaluation comes from Wi-Fi link/name/power
+  events and wake only. There is no timer or continuous enforcement loop.
+- Reuse the native service identification and transaction kernel's immutable baseline,
+  conflict checks, non-waiting lock, commit/apply and full readback verification.
+  Recheck SSID, interface, service and configuration immediately before mutation.
+- A full external DNS change or failed/uncertain write blocks another attempt on
+  the same association. A new association creates one new opportunity. Update/quit
+  guards cover in-flight rule work; there is no second writer UI to coordinate.
+- Location permission exists only to obtain the current Wi-Fi name. Rules never
+  scan networks, change routing, use a helper or shell, inspect proxy clients, touch
+  proxy files, or call proxy control interfaces.
+- Existing version-1 rule data migrates to an Automatic default. A completely new
+  configuration keeps the global Automatic switching control off until explicitly
+  saved, so first launch cannot prompt or write merely because a default exists.
+
+## Amendment: current DNS on the monitor (2026-10-19)
+
+The owner requested a read-only DNS row between machine readings and processes,
+with a badge drawn in the existing technology/style and adaptation at every size.
+This replaces the earlier DNS stages' decision to keep the monitor Scene unchanged.
+
+- A new optional DNS module is on by default. A plain neutral badge has three
+  address endpoints converging into a resolver node, on the same disc and grid as
+  the other glyphs. It has no usage arc, divider or decorative strip.
+- In column layouts DNS stays in the statistics column after the GPU/power
+  figures, before processes. Corner, compact and rich/vertical strips show the
+  bounded figure. Plain strips and the smallest layout keep the badge and its
+  hover, preserving room for the existing essential readings.
+- Full addresses appear when they fit. Otherwise shorten the first address and
+  count the remaining addresses; hover shows full addresses and source. Size and
+  position never depend on current addresses. Service reference data is labeled
+  explicitly, and unavailable is a dash.
+- The existing hover chip wraps long IPv6 and multiple addresses and stays on
+  screen. An overlong list reports omitted lines, with the complete current
+  snapshot available by hovering More → Wi-Fi DNS rules. Nothing polls DNS on
+  the per-sample rendering path.
+
+## Amendment: upload and download process rankings (2026-10-19)
+
+The owner requested two more metrics in the existing process list after a
+sampling-cost and Clash TUN attribution experiment.
+
+- The same list has processor, memory, download and upload modes. Wide layouts
+  offer four native badge switches, reusing the existing up/down glyphs. More
+  offers the same setting at every size. A narrow list and the rich strip keep
+  the selected metric instead of silently changing back to processor use.
+- Rates use KB/s, MB/s and larger units with fixed reserved geometry. A network
+  row's app badge has no share arc: process socket activity is not a partition
+  of physical-interface throughput. CPU and memory keep their existing arcs.
+- The process card keeps CPU and memory and adds a pair of rate figures. A
+  network-only process without usage data shows dashes for CPU and memory.
+  Details state that local/proxy connections can count under their owners;
+  TUN can expose both original-app and proxy activity. Do not invent a mapping
+  or subtract one process from another to manufacture unique Internet usage.
+- Collection is demanded by a visible network ranking, with the 20-second
+  departure grace described below. Missing/expired readings stay unavailable;
+  a valid zero stays zero.
+  The two new rankings each keep their own existing stabilization behavior.
+- The initial nettop investigation found cost and output sensitive to stdio
+  handling. A native low-frequency query passed the source prototype, so the
+  implementation uses that read-only route without a persistent command child.
+  It does not change DNS, TUN, routing, proxy profiles or helper privileges.
+
+## Correction: rankings follow all statistics (2026-10-20)
+
+The owner found the process ranking between DNS and the network/GPU/power rows
+after changing module visibility. Re-enabling a stacked module appends it to the
+stored module order, which must not move basic information below the ranking.
+
+- In a stacked statistics column, CPU/memory/network and added readings, including
+  GPU, power and DNS, all precede the process ranking in every sort mode.
+- Enforce that order while building the Scene, including legacy/custom module
+  orders and re-enabled modules. Preserve the relative order of basic statistics
+  and the user's saved configuration; no file migration is required.
+- Large layouts retain their separate process column. Compact, single-column,
+  two-column and three-column candidates share this ordering rule. Small forms
+  without a process list and the rich strip sequence are unchanged.
+
+## Refinement: loading and short network-sort departures (2026-10-20)
+
+- While the native reader is establishing its rate baseline, network rankings
+  show “数据读取中” / “Reading data…” in the existing first reserved row. Rich
+  strips use their existing process slot. Loading, a valid empty sample and a
+  genuine failure are distinct states; the status never changes layout size.
+- Leaving download/upload for CPU or memory retains the live network reader
+  for 20 seconds. Returning to either network mode cancels that pending stop and
+  reuses the current observer and baseline. CPU/memory changes or unrelated
+  settings restarts do not extend the original deadline.
+- Hide/occlusion, menu-bar-only sampling, disabling processes and shutdown stop
+  immediately. Wake starts with a clean baseline. At expiry the sampler pushes
+  collection-off state; stale or expired UI rows are cleared before cold return.
+- Remove only the idle process-card instruction to select Download/Upload.
+  Actual collection errors and the existing proxy/TUN attribution scope remain.
+  In grace, the process card can still display freshly sampled traffic.
+
 ## Rejected by the owner (do not reintroduce)
 
 - A processor figure larger than the figures beside it (2026-10-08): the core columns

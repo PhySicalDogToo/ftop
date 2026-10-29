@@ -9,10 +9,12 @@
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.2.6</string>
-    <key>CFBundleVersion</key><string>9</string>
+    <key>CFBundleVersion</key><string>16</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSLocationUsageDescription</key><string>ftop uses location permission only to read the connected Wi-Fi name for exact-name DNS switching rules.</string>
+    <key>NSLocationWhenInUseUsageDescription</key><string>ftop uses location permission only to read the connected Wi-Fi name for exact-name DNS switching rules.</string>
     <key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
 </dict>
 </plist>

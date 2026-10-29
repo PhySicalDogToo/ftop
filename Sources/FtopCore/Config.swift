@@ -1,13 +1,14 @@
 import Foundation
 
 public enum ModuleID: String, Sendable, Codable, CaseIterable {
-    case cpu, memory, network, processes, gpu, power
+    case cpu, memory, network, processes, gpu, power, dns
 
-    /// Modules with a block of their own, stacked in the order the user lists them.
+    /// Modules with a block of their own. Statistics keep their configured order;
+    /// the process list follows all statistics in its column.
     public static let stacked: [ModuleID] = [.cpu, .memory, .network, .processes]
     /// Readings placed into the blocks of the stacked modules. A new one shows for
     /// everyone until it is listed under `hidden`.
-    public static let added: [ModuleID] = [.gpu, .power]
+    public static let added: [ModuleID] = [.gpu, .power, .dns]
 }
 
 public enum PaletteID: String, Sendable, Codable, CaseIterable {
@@ -49,7 +50,7 @@ public enum Language: String, Sendable, Codable {
 /// User-owned settings, read from `~/.config/ftop/config.json5`. Every field is
 /// optional in the file; a missing or out-of-range value falls back to its default.
 public struct Config: Sendable, Codable, Equatable {
-    /// Stacked modules to show, in order.
+    /// Stacked modules to show. Statistics keep this order; processes follow them.
     public var modules: [ModuleID] = ModuleID.stacked
     /// Added readings the user turned off.
     public var hidden: [ModuleID] = []
@@ -109,7 +110,7 @@ public struct Config: Sendable, Codable, Equatable {
     }
 
     /// Modules a user can turn off, in the order the settings list them. CPU is always shown.
-    public static let optional: [ModuleID] = [.memory, .network, .gpu, .power, .processes]
+    public static let optional: [ModuleID] = [.memory, .network, .gpu, .power, .dns, .processes]
 
     /// Shows or hides one module and returns the `key: value` line of the settings file that changed.
     public mutating func setShown(_ module: ModuleID, _ on: Bool) -> (key: String, value: String) {
@@ -142,10 +143,10 @@ public struct Config: Sendable, Codable, Equatable {
     public static let template = """
         // ftop settings. Changes apply as soon as the file is saved.
         {
-          // Modules to show, top to bottom: "cpu", "memory", "network", "processes".
+          // Statistics in order; processes stay below all statistics in their column.
           modules: ["cpu", "memory", "network", "processes"],
 
-          // Readings to leave out: "gpu" (the GPU's ring and its figures), "power" (the whole machine's watts).
+          // Readings to leave out: "gpu", "power" (the whole machine's watts), "dns" (system DNS addresses).
           hidden: [],
 
           // Colors: "sea", "graphite", or "warm".
@@ -165,8 +166,8 @@ public struct Config: Sendable, Codable, Equatable {
           // Most process rows a large window may show (3 to 24).
           maxProcesses: 24,
 
-          // What the process list is ranked by: "cpu" or "memory". The two badges above
-          // the list in a large window switch it.
+          // What the process list is ranked by: "cpu", "memory", "download", or "upload".
+          // Traffic is read only while a network ranking is selected and processes are shown.
           processSort: "cpu",
 
           // Keep the panel above other windows (the pin button does the same).

@@ -86,6 +86,17 @@ import Testing
 }
 
 @Suite struct ConfigTests {
+    @Test func dnsDisplayDefaultsOnAndCanBeHiddenWithoutChangingOtherModules() throws {
+        var config = try Config.decode(Data(#"{ hidden: ["gpu"] }"#.utf8))
+        #expect(config.shown.contains(.dns))
+        let change = config.setShown(.dns, false)
+        #expect(change.key == "hidden")
+        #expect(config.hidden == [.gpu, .dns])
+        #expect(!config.shown.contains(.dns))
+        _ = config.setShown(.dns, true)
+        #expect(config.hidden == [.gpu])
+        #expect(try Config.decode(JSONEncoder().encode(config)) == config)
+    }
     @Test func menuBarReading() throws {
         #expect(try Config.decode(Data("{}".utf8)).menuBarShows == .cpu)
         #expect(try Config.decode(Data(#"{ menuBarShows: "upload" }"#.utf8)).menuBarShows == .upload)

@@ -1,0 +1,12 @@
+{
+  "native_network_available": true,
+  "download_entries": 18,
+  "upload_entries": 18,
+  "has_positive_download": true,
+  "has_positive_upload": true,
+  "all_rates_finite_nonnegative": true,
+  "download_sorted": true,
+  "upload_sorted": true,
+  "network_only_usage_unknown": true,
+  "final_packaged_binary": true
+}

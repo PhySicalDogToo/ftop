@@ -25,13 +25,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private let model = PanelModel()
     private let sampler = SystemSampler()
+    private let dnsStatus = DNSStatusMonitor()
+    private var dnsStatusEnabled = false
+    private var dnsStatusGeneration: UInt64 = 0
     private let updater = Updater()
     private var updateTimer: Timer?
+    private var controlDNSRead: Task<Void, Never>?
+    private var controlDNSState = DNSState()
+    private var hasBuiltControl = false
+    private lazy var dnsRules: DNSWiFiRulesCoordinator = {
+        let coordinator = DNSWiFiRulesCoordinator()
+        coordinator.canMutate = { [weak self] in
+            guard let self else { return false }
+            if case .installing = self.updater.state { return false }
+            return true
+        }
+        coordinator.palette = { [weak self] in self?.model.config.palette ?? .sea }
+        coordinator.onDNSChanged = { [weak self] state in
+            self?.model.setDNS(state)
+            self?.controlDNSState = state
+            self?.refreshControlIfShown()
+            self?.dnsStatus.refresh()
+        }
+        return coordinator
+    }()
     private var panel: FloatingPanel!
     private var statusItem: NSStatusItem?
     private var configWatcher: DispatchSourceFileSystemObject?
     private var snapWork: DispatchWorkItem?
     private var samplingMode = SamplingMode.off
+    private var samplingGeneration: UInt64 = 0
+    /// Mirrors the UI's departure time only to avoid briefly showing expired rows
+    /// before the sampler's asynchronous expiry notification reaches the main queue.
+    private var processNetworkRetentionDeadline: TimeInterval?
     private var resizeStart: NSRect?
     /// True while the window is springing to its layout; nothing else may move it then.
     private var settling = false
@@ -70,13 +96,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             panel.orderFrontRegardless()
         }
         updateSampling()
+        updateDNSStatus()
+        dnsRules.start()
         startUpdates()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !dnsRules.isBusy else {
+            dnsRules.show()
+            NSSound.beep()
+            return .terminateCancel
+        }
+        controlDNSRead?.cancel()
+        dnsStatus.stop()
+        dnsRules.shutdown()
+        sampler.stop()
+        return .terminateNow
     }
 
     // MARK: Updates
 
     private func startUpdates() {
         updater.mode = model.config.updates
+        updater.mayInstall = { [weak self] in
+            self?.dnsRules.isShown != true
+                && self?.dnsRules.isBusy != true
+        }
         updater.onChange = { [weak self] in
             guard let self else { return }
             self.control.refresh(self.controlState)
@@ -121,6 +166,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// The settings button: installs only when asked to, or when that is the setting.
     private func updateButtonPressed() {
         if case .available = updater.state {
+            guard !dnsRules.isShown, !dnsRules.isBusy else {
+                showDNSAlert(
+                    Strings.pick(
+                        "Close DNS settings and wait for any DNS operation before installing an update.",
+                        "请关闭 DNS 设置并等待 DNS 操作完成后再安装更新。"))
+                return
+            }
             updater.installFound()
         } else {
             Task { await updater.check(install: model.config.updates == .install) }
@@ -332,6 +384,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: Sampling
 
+    /// DNS follows network notifications, independently of the hardware timer.
+    private func updateDNSStatus() {
+        let enabled = model.config.shown.contains(.dns)
+        guard enabled != dnsStatusEnabled else { return }
+        dnsStatusEnabled = enabled
+        dnsStatusGeneration &+= 1
+        let generation = dnsStatusGeneration
+        guard enabled else {
+            dnsStatus.stop()
+            model.setDNS(DNSState())
+            return
+        }
+        dnsStatus.start { [weak self] state in
+            Task { @MainActor [weak self] in
+                guard let self, self.dnsStatusEnabled, self.dnsStatusGeneration == generation else { return }
+                self.model.setDNS(state)
+                self.controlDNSState = state
+                self.refreshControlIfShown()
+            }
+        }
+    }
+
     private var panelShowing: Bool { panel.isVisible && panel.occlusionState.contains(.visible) }
 
     /// Reads everything while the panel can be seen, only the menu bar's reading while
@@ -339,6 +413,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func updateSampling(restart: Bool = false) {
         let wanted: SamplingMode = panelShowing ? .full : (statusItem != nil ? .menuBarOnly : .off)
         guard wanted != samplingMode || restart else { return }
+        if wanted != .full {
+            processNetworkRetentionDeadline = nil
+            model.resetProcessNetwork(loading: false)
+        } else if samplingMode != .full {
+            model.resetProcessNetwork(loading: model.config.processSort.isNetwork && model.config.shown.contains(.processes))
+            model.render()
+        }
+        samplingGeneration &+= 1
+        let generation = samplingGeneration
         samplingMode = wanted
         log.info(
             "sampling \(String(describing: wanted), privacy: .public): window shown \(self.panel.isVisible), seen \(self.panel.occlusionState.contains(.visible)), on active space \(self.panel.isOnActiveSpace)"
@@ -350,8 +433,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // The menu bar's reading is read even when the panel does not show its module.
         let forMenuBar = statusItem != nil ? [model.config.menuBarShows.module] : []
         let modules = wanted == .full ? model.config.shown + forMenuBar.filter { !model.config.shown.contains($0) } : forMenuBar
-        sampler.start(interval: model.config.interval, modules: modules, usageOnly: wanted == .menuBarOnly) { [weak self] snapshot in
-            Task { @MainActor in self?.ingest(snapshot) }
+        sampler.start(
+            interval: model.config.interval, modules: modules, usageOnly: wanted == .menuBarOnly,
+            processNetwork: wanted == .full && model.config.processSort.isNetwork && model.config.shown.contains(.processes)
+        ) { [weak self] snapshot in
+            Task { @MainActor [weak self] in
+                guard let self, self.samplingGeneration == generation else { return }
+                self.ingest(snapshot)
+            }
         }
     }
 
@@ -444,6 +533,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// The one block of settings, in place of a menu and a settings window.
     private lazy var control: ControlPanel = {
+        hasBuiltControl = true
         let control = ControlPanel(state: controlState)
         control.onChange = { [weak self] config, key, value in
             ConfigStore.update(key: key, value: value)
@@ -453,6 +543,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         control.onQuit = { [weak self] in self?.quit() }
         control.onOpenFile = { [weak self] in self?.openConfig() }
         control.onUpdate = { [weak self] in self?.updateButtonPressed() }
+        control.onConfigureDNSRules = { [weak self] in self?.dnsRules.show() }
         return control
     }()
 
@@ -466,17 +557,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if shown.contains(.network), snapshot.network.value == nil { unreadable.insert(.network) }
         }
         return ControlPanel.State(
-            config: model.config, panelVisible: panel?.isVisible ?? true, unreadable: unreadable, updateStatus: updateStatus, updateAction: updateAction)
+            config: model.config, panelVisible: panel?.isVisible ?? true,
+            unreadable: unreadable, updateStatus: updateStatus,
+            updateAction: updateAction, dns: controlDNSState)
     }
 
     private func showControl(at point: NSPoint) {
+        if dnsStatusEnabled { controlDNSState = model.dns }
         control.show(controlState, at: point)
+        refreshControlDNS()
+    }
+
+    /// Refresh the tooltip snapshot without making the UI layer inspect the network.
+    private func refreshControlDNS() {
+        controlDNSRead?.cancel()
+        controlDNSRead = Task { [weak self] in
+            let state = await Task.detached(priority: .utility) { DNSReader.read() }.value
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            controlDNSState = state
+            control.refresh(controlState)
+            controlDNSRead = nil
+        }
+    }
+
+    private func refreshControlIfShown() {
+        guard hasBuiltControl, control.isShown else { return }
+        control.refresh(controlState)
+    }
+
+    private func showDNSAlert(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = Strings.pick("DNS settings", "DNS 设置")
+        alert.informativeText = message
+        alert.addButton(withTitle: Strings.pick("OK", "好"))
+        alert.runModal()
     }
 
     private func apply(_ config: Config) {
         let old = model.config
+        let showsProcesses = config.shown.contains(.processes)
+        if !showsProcesses {
+            processNetworkRetentionDeadline = nil
+        } else if config.processSort.isNetwork {
+            if let deadline = processNetworkRetentionDeadline, ProcessInfo.processInfo.systemUptime >= deadline {
+                model.resetProcessNetwork(loading: true)
+            }
+            processNetworkRetentionDeadline = nil
+        } else if old.processSort.isNetwork, old.shown.contains(.processes), samplingMode == .full {
+            processNetworkRetentionDeadline = ProcessInfo.processInfo.systemUptime + SystemSampler.processNetworkGracePeriod
+        }
         let needsRestart =
             config.interval != old.interval || config.shown != old.shown || config.menuBar != old.menuBar || config.menuBarShows != old.menuBarShows
+            || config.processSort.isNetwork != old.processSort.isNetwork
         let layoutChanged = model.apply(config)
         applyFloating()
         updateStatusItem()
@@ -484,6 +617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         control.refresh(controlState)
         if layoutChanged { relayout() } else { model.render() }
         updateSampling(restart: needsRestart)
+        updateDNSStatus()
     }
 
     private func watchConfig() {
@@ -532,7 +666,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func screensChanged() { pullOnScreen() }
     /// Counters jump across sleep; restart so the first sample after wake is a clean baseline.
     @objc private func didWake() {
+        processNetworkRetentionDeadline = nil
+        model.resetProcessNetwork(loading: panelShowing && model.config.processSort.isNetwork && model.config.shown.contains(.processes))
+        if panelShowing { model.render() }
+        sampler.stop()
         updateSampling(restart: true)
+        dnsStatus.refresh()
         updater.checkIfDue()
     }
 
@@ -561,6 +700,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func showPanel() {
         pullOnScreen()
+        if samplingMode != .full {
+            model.resetProcessNetwork(loading: model.config.processSort.isNetwork && model.config.shown.contains(.processes))
+            model.render()
+        }
         panel.orderFrontRegardless()
         updateSampling()
     }

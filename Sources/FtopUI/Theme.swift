@@ -69,6 +69,26 @@ public struct PanelStyle: Equatable, Sendable {
     var processNameWidth: CGFloat { points(92) }
     /// Process names get more room when the list has a column to itself.
     var processNameWideWidth: CGFloat { points(124) }
+    var processUnitGap: CGFloat { points(3) }
+    var processStripNameWidth: CGFloat { points(104) }
+    /// Shared by every sort, including rates, so changing a sort or a reading never resizes the panel.
+    @MainActor var processFigureRoom: CGFloat {
+        Typesetter.width("888.8 GB/s", bodyStrong)
+    }
+    /// Stable room in strips; addresses never set the window's natural width.
+    var dnsStripWidth: CGFloat { points(150) }
+    var dnsMinimumWidth: CGFloat { points(150) }
+    var dnsCountAddressRoom: CGFloat { points(70) }
+
+    static let chipMaxWidth: CGFloat = 480
+    static let chipPaddingX: CGFloat = 8
+    static let chipPaddingY: CGFloat = 4
+    static let chipMinHeight: CGFloat = 20
+    static let chipScreenInset: CGFloat = 4
+    static let chipPointerGap: CGFloat = 12
+    static let chipTextSize: CGFloat = 11
+    static let chipCornerRadius: CGFloat = 6
+    static let chipMoveStep: CGFloat = 14
 
     /// Between two rows of the process list.
     var processRowGap: CGFloat { points(8) }
@@ -164,6 +184,24 @@ public struct PanelStyle: Equatable, Sendable {
     /// The glyph of a reading this machine does not give.
     static let controlDimOpacity: Float = 0.35
 
+    // Event-driven Wi-Fi DNS rules. This native utility surface uses the same
+    // spacing, rounded tracks, type scale, and status colors as the main panel.
+    static let dnsRulesWidth: CGFloat = 520
+    static let dnsRulesCompactWidth: CGFloat = 380
+    static let dnsRulesPadding: CGFloat = 20
+    static let dnsRulesGap: CGFloat = 12
+    static let dnsRulesButtonGap: CGFloat = 8
+    static let dnsRulesCardInset: CGFloat = 12
+    static let dnsRulesCardCorner: CGFloat = 12
+    static let dnsRulesRuleGap: CGFloat = 10
+    static let dnsRulesRulesHeight: CGFloat = 300
+    static let dnsRulesRulesMinimumHeight: CGFloat = 112
+    static let dnsRulesAddressHeight: CGFloat = 58
+    static let dnsRulesAddressSize: CGFloat = 12
+    static let dnsRulesProgressSize: CGFloat = 16
+    static let dnsRulesStatusDot: CGFloat = 10
+    static let utilityBackgroundColor = NSColor.windowBackgroundColor
+
     // Process rows: how they move.
     /// A row under a press shrinks to this and springs back when let go.
     static let rowPressScale: CGFloat = 0.97
@@ -186,6 +224,17 @@ public struct PanelStyle: Equatable, Sendable {
     /// The card grows from this size out of its row, and leaves in this many seconds.
     static let cardStartScale: CGFloat = 0.9
     static let cardLeave: Double = 0.1
+    static let processCardPadding: CGFloat = 14
+    static let processCardIcon: CGFloat = 30
+    static let processCardTitleGap: CGFloat = 10
+    static let processCardBlockGap: CGFloat = 12
+    static let processCardColumnGap: CGFloat = 18
+    static let processCardRowPitch: CGFloat = 19
+    static let processCardNotePitch: CGFloat = 15
+    static let processCardMinimumWidth: CGFloat = 240
+    static let processCardMaximumWidth: CGFloat = 300
+    static let processCardMemberFigureRoom: CGFloat = 80
+    static let processCardNoteMaximumLines = 8
 
     /// Stroke of the glyphs drawn here, on their 16-unit grid.
     static let glyphLine: CGFloat = 1.5

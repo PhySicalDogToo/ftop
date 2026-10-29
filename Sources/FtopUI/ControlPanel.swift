@@ -17,13 +17,20 @@ public final class ControlPanel: NSObject {
         public var updateStatus: String
         /// What the update action does now: check, or install what was found.
         public var updateAction: String
+        /// A read-only system snapshot supplied by the app for the DNS-rule tooltip.
+        public var dns: DNSState
 
-        public init(config: Config, panelVisible: Bool = true, unreadable: Set<ModuleID> = [], updateStatus: String = "", updateAction: String = "") {
+        public init(
+            config: Config, panelVisible: Bool = true,
+            unreadable: Set<ModuleID> = [], updateStatus: String = "",
+            updateAction: String = "", dns: DNSState = DNSState()
+        ) {
             self.config = config
             self.panelVisible = panelVisible
             self.unreadable = unreadable
             self.updateStatus = updateStatus
             self.updateAction = updateAction
+            self.dns = dns
         }
     }
 
@@ -33,6 +40,8 @@ public final class ControlPanel: NSObject {
     public var onQuit: (() -> Void)?
     public var onOpenFile: (() -> Void)?
     public var onUpdate: (() -> Void)?
+    /// Opens exact-name Wi-Fi rules; merely opening the surface is read-only.
+    public var onConfigureDNSRules: (() -> Void)?
 
     private let window = ControlWindow()
     private let face: ControlFace
@@ -49,7 +58,10 @@ public final class ControlPanel: NSObject {
         glass.addSubview(face)
         window.contentView = glass
         face.onChange = { [weak self] config, key, value in self?.onChange?(config, key, value) }
-        face.onResize = { [weak self] in self?.fit(keepingTop: true) }
+        face.onResize = { [weak self] in
+            guard let self else { return }
+            fit(keepingTop: true)
+        }
         face.onAction = { [weak self] action in
             guard let self else { return }
             switch action {
@@ -61,6 +73,9 @@ public final class ControlPanel: NSObject {
                 dismiss()
                 onOpenFile?()
             case .update: onUpdate?()
+            case .configureDNSRules:
+                dismiss()
+                onConfigureDNSRules?()
             }
         }
     }
@@ -175,6 +190,7 @@ public final class ControlPanel: NSObject {
         case .processes: Strings.pick("Processes", "进程")
         case .gpu: "GPU"
         case .power: Strings.pick("Power", "功耗")
+        case .dns: "DNS"
         }
     }
 
@@ -188,6 +204,8 @@ public final class ControlPanel: NSObject {
         case .power: Strings.pick("Power", "功耗")
         }
     }
+
+    public static func name(of sort: ProcessSort) -> String { ProcessPresentation.name(sort) }
 
     /// The block's contents on their own, for the reference pictures.
     public static func picture(_ state: State, expanded: Bool) -> NSView {
@@ -216,12 +234,14 @@ private final class ControlWindow: NSPanel {
 
 /// The switches and rows of the control block, as layers.
 @MainActor
-final class ControlFace: NSView {
-    enum Action { case togglePanel, quit, openFile, update }
+final class ControlFace: NSView, NSViewToolTipOwner {
+    enum Action: Equatable {
+        case togglePanel, quit, openFile, update, configureDNSRules
+    }
 
-    private enum Item: Hashable {
+    enum Item: Hashable {
         case module(ModuleID), floating, menuBar, motion, panel, quit, palette(PaletteID), more
-        case shows, interval, rows, language, updates, file
+        case shows, interval, rows, ranking, language, updates, dns, file
     }
 
     private final class Disc {
@@ -258,6 +278,7 @@ final class ControlFace: NSView {
     private var hovered: Item?
     private var pressed: Item?
     private var tracking: NSTrackingArea?
+    private var dnsToolTipTag: NSView.ToolTipTag?
 
     private static let intervals: [Double] = [0.5, 1, 2, 5, 10]
     private static let rowCounts = [3, 5, 7, 9, 12, 16, 24]
@@ -290,10 +311,43 @@ final class ControlFace: NSView {
         ]
     }
 
-    private static let listed: [Item] = [.shows, .interval, .rows, .language, .updates, .file]
+    private var columnCount: Int { max(grid.map(\.count).max() ?? 0, PaletteID.allCases.count + 1) }
+
+    /// Geometry from the actual layers and the shared hover/click hit test.
+    struct TargetLayout {
+        var item: Item
+        var discFrame: CGRect?
+        var visualFrames: [CGRect]
+        var hitFrame: CGRect
+    }
+
+    var targetLayout: [TargetLayout] {
+        discs.map {
+            var visuals = [$0.layer.frame, $0.label.frame]
+            if case .palette = $0.item {
+                if $0.item == .palette(config.palette) { visuals.append(ring.frame) }
+            } else {
+                visuals.append($0.glyph.frame.offsetBy(dx: $0.layer.frame.minX, dy: $0.layer.frame.minY))
+            }
+            return TargetLayout(item: $0.item, discFrame: $0.layer.frame, visualFrames: visuals, hitFrame: $0.cell)
+        }
+            + rows.map {
+                TargetLayout(item: $0.item, discFrame: nil, visualFrames: [$0.highlight.frame, $0.title.frame, $0.value.frame], hitFrame: $0.frame)
+            }
+    }
+
+    func targetItem(at point: CGPoint) -> Item? { item(at: point) }
+
+    private static let listed: [Item] = [.shows, .interval, .rows, .ranking, .language, .updates, .dns, .file]
+
+    /// The Wi-Fi DNS rules action is present only while More is expanded.
+    var dnsRowFrame: CGRect? { rows.first(where: { $0.item == .dns })?.frame }
+    var dnsTooltipText: String { DNSDetails.tooltip(state.dns) }
+    var hasDNSToolTip: Bool { dnsToolTipTag != nil }
+    var processRankingRowFrame: CGRect? { rows.first(where: { $0.item == .ranking })?.frame }
 
     override var fittingSize: NSSize {
-        let width = PanelStyle.controlPadding * 2 + PanelStyle.controlPitchX * 4 + PanelStyle.controlDisc
+        let width = PanelStyle.controlPadding * 2 + PanelStyle.controlPitchX * CGFloat(max(0, columnCount - 1)) + PanelStyle.controlDisc
         let cellHeight = PanelStyle.controlDisc + PanelStyle.controlLabelGap + PanelStyle.controlLabelHeight
         var height = PanelStyle.controlPadding + PanelStyle.controlRowPitch * 2 + cellHeight + PanelStyle.controlPadding - 4
         if expanded { height += PanelStyle.controlListRow * CGFloat(Self.listed.count) + PanelStyle.controlListGap }
@@ -348,8 +402,10 @@ final class ControlFace: NSView {
         case .shows: Strings.pick("Menu bar shows", "菜单栏显示")
         case .interval: Strings.pick("Update every", "刷新间隔")
         case .rows: Strings.pick("Process rows, up to", "进程行数上限")
+        case .ranking: Strings.pick("Process ranking", "进程排序")
         case .language: Strings.pick("Language", "语言")
         case .updates: Strings.pick("Updates", "更新")
+        case .dns: Strings.pick("Wi-Fi DNS rules", "Wi-Fi DNS 规则")
         case .file: Strings.pick("Open settings file", "打开设置文件")
         }
     }
@@ -396,8 +452,10 @@ final class ControlFace: NSView {
         case .shows: ControlPanel.name(of: config.menuBarShows) + "  ›"
         case .interval: Self.seconds(config.interval) + "  ›"
         case .rows: "\(config.maxProcesses)  ›"
+        case .ranking: ControlPanel.name(of: config.processSort) + "  ›"
         case .language: Self.name(of: config.language) + "  ›"
         case .updates: updatesValue + "  ›"
+        case .dns: Strings.pick("Open…", "打开…") + "  ›"
         case .file: "↗"
         default: ""
         }
@@ -419,6 +477,10 @@ final class ControlFace: NSView {
 
     private func build() {
         guard let host = layer else { return }
+        if let dnsToolTipTag {
+            removeToolTip(dnsToolTipTag)
+            self.dnsToolTipTag = nil
+        }
         host.sublayers?.forEach { $0.removeFromSuperlayer() }
         discs = []
         rows = []
@@ -439,8 +501,8 @@ final class ControlFace: NSView {
             layout[2].append(.more)
             for (rowIndex, items) in layout.enumerated() {
                 for (index, item) in items.enumerated() {
-                    // "More" sits in the last column, under Quit.
-                    let column = item == .more ? 4 : index
+                    // "More" stays on the right edge as optional modules are added.
+                    let column = item == .more ? columnCount - 1 : index
                     let origin = CGPoint(
                         x: PanelStyle.controlPadding + CGFloat(column) * PanelStyle.controlPitchX,
                         y: PanelStyle.controlPadding + CGFloat(rowIndex) * PanelStyle.controlRowPitch)
@@ -525,6 +587,10 @@ final class ControlFace: NSView {
                 row.value.frame.origin.x = inner.minX + titleWidth + 12
                 row.value.frame.size.width = inner.width - titleWidth - 12
                 rows.append(row)
+                if item == .dns {
+                    dnsToolTipTag = addToolTip(
+                        row.frame, owner: self, userData: nil)
+                }
             }
         }
         CATransaction.commit()
@@ -549,6 +615,7 @@ final class ControlFace: NSView {
             switch item {
             case .module(.memory): GlyphArt.draw(.memory, in: box, color: black, context: context)
             case .module(.gpu): GlyphArt.draw(.gpu, in: box, color: black, context: context)
+            case .module(.dns): GlyphArt.draw(.dns, in: box, color: black, context: context)
             default:
                 guard let name = symbol(item) else { return }
                 let configuration = NSImage.SymbolConfiguration(pointSize: side, weight: .semibold)
@@ -615,6 +682,14 @@ final class ControlFace: NSView {
         discs.first { $0.cell.contains(point) }?.item ?? rows.first { $0.frame.contains(point) }?.item
     }
 
+    /// Shared hit-testing entry point for an own-view action and its layout checks.
+    @discardableResult
+    func activate(at point: CGPoint) -> Bool {
+        guard let item = item(at: point) else { return false }
+        activate(item)
+        return true
+    }
+
     private func hover(_ item: Item?) {
         guard item != hovered else { return }
         hovered = item
@@ -623,6 +698,13 @@ final class ControlFace: NSView {
 
     override func mouseMoved(with event: NSEvent) { hover(item(at: convert(event.locationInWindow, from: nil))) }
     override func mouseExited(with event: NSEvent) { hover(nil) }
+
+    func view(
+        _ view: NSView, stringForToolTip tag: NSView.ToolTipTag,
+        point: NSPoint, userData data: UnsafeMutableRawPointer?
+    ) -> String {
+        tag == dnsToolTipTag ? dnsTooltipText : ""
+    }
 
     override func mouseDown(with event: NSEvent) {
         pressed = item(at: convert(event.locationInWindow, from: nil))
@@ -683,8 +765,9 @@ final class ControlFace: NSView {
             build()
             onResize?()
         case .file: onAction?(.openFile)
+        case .dns: onAction?(.configureDNSRules)
         case .shows: if config.menuBar { choose(item) }
-        case .interval, .rows, .language, .updates: choose(item)
+        case .interval, .rows, .ranking, .language, .updates: choose(item)
         }
     }
 
@@ -729,7 +812,7 @@ final class ControlFace: NSView {
 
     private func choose(_ item: Item) {
         guard let row = rows.first(where: { $0.item == item }) else { return }
-        let menu = NSMenu()
+        var menu = NSMenu()
         func add(_ title: String, checked: Bool, _ pick: @escaping (inout Config) -> (String, String)) {
             let entry = ChoiceItem(title: title, action: #selector(picked(_:)), keyEquivalent: "")
             entry.target = self
@@ -759,6 +842,8 @@ final class ControlFace: NSView {
                     return ("maxProcesses", String(option))
                 }
             }
+        case .ranking:
+            menu = makeProcessSortMenu()
         case .language:
             for option in Self.languages {
                 add(Self.name(of: option), checked: option == config.language) {
@@ -787,6 +872,22 @@ final class ControlFace: NSView {
         choosing = true
         menu.popUp(positioning: nil, at: NSPoint(x: row.frame.maxX - PanelStyle.controlPadding - 40, y: row.frame.maxY - 4), in: self)
         choosing = false
+    }
+
+    /// Built independently of showing it, so the same own-view actions are testable off screen.
+    func makeProcessSortMenu() -> NSMenu {
+        let menu = NSMenu()
+        for sort in ProcessSort.allCases {
+            let entry = ChoiceItem(title: ControlPanel.name(of: sort), action: #selector(picked(_:)), keyEquivalent: "")
+            entry.target = self
+            entry.state = sort == config.processSort ? .on : .off
+            entry.pick = {
+                $0.processSort = sort
+                return ("processSort", "\"\(sort.rawValue)\"")
+            }
+            menu.addItem(entry)
+        }
+        return menu
     }
 
     @objc private func picked(_ sender: ChoiceItem) {

@@ -2,13 +2,13 @@ import AppKit
 
 /// The small picture inside a badge. Each reading has one, and it is the same picture at every window size.
 public enum Glyph: Hashable, Sendable {
-    case cpu, gpu, memory, temperature, download, upload, adapter, machine, power
+    case cpu, gpu, memory, temperature, download, upload, dns, adapter, machine, power
     /// A process that belongs to no app.
     case process
 
     /// System symbols, where their shape stays clear at badge size. The chip, the memory
-    /// module, and the thermometer are drawn here instead: the system's have pins and
-    /// tick marks that close up into a blot this small.
+    /// module, thermometer, and DNS nodes are drawn here instead: details must stay
+    /// distinct at the badge's small size.
     var symbol: String? {
         switch self {
         case .gpu: "square.stack.3d.up"
@@ -17,7 +17,7 @@ public enum Glyph: Hashable, Sendable {
         case .adapter: "powerplug"
         case .machine: "laptopcomputer"
         case .power: "bolt.fill"
-        case .cpu, .memory, .temperature, .process: nil
+        case .cpu, .memory, .temperature, .dns, .process: nil
         }
     }
 }
@@ -60,6 +60,7 @@ enum GlyphArt {
         switch glyph {
         case .cpu: return (12 + PanelStyle.glyphLine) * unit
         case .memory: return (11 + PanelStyle.glyphLine) * unit
+        case .dns: return (10.5 + PanelStyle.glyphLine) * unit
         default: return side
         }
     }
@@ -147,6 +148,17 @@ enum GlyphArt {
                 line(offset, 5, offset, 3)
                 line(offset, 11, offset, 13)
             }
+        case .dns:
+            // Three address endpoints feed one resolver. Tiny closed strokes
+            // make solid dots; the resolver keeps an open center at badge size.
+            for centerY in [3.5, 8, 12.5] as [CGFloat] {
+                path.addEllipse(in: CGRect(x: 2.75, y: centerY - 0.75, width: 1.5, height: 1.5))
+            }
+            line(4.25, 3.5, 7, 3.5)
+            line(4.25, 8, 9.5, 8)
+            line(4.25, 12.5, 7, 12.5)
+            line(7, 3.5, 7, 12.5)
+            path.addRoundedRect(in: CGRect(x: 9.5, y: 5.25, width: 3.75, height: 5.5), cornerWidth: 1, cornerHeight: 1)
         case .temperature:
             // A stem with a round top that opens into the bulb, as one outline.
             let stem: CGFloat = 1.6

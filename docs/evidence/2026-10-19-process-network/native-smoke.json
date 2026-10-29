@@ -1,0 +1,16 @@
+{
+  "interface": "production CFtopSys process-network create/copy/destroy",
+  "cycles": [
+    {"cycle": 1, "completed_frames": 3, "peak_sources": 397, "identity_matches": 1161},
+    {"cycle": 2, "completed_frames": 3, "peak_sources": 412, "identity_matches": 1176}
+  ],
+  "wall_seconds": 13.74,
+  "user_cpu_seconds": 0.07,
+  "system_cpu_seconds": 0.02,
+  "cpu_percent_one_core_approximate": 0.655,
+  "rss_bytes": null,
+  "exit_code": 0,
+  "privileges": "ordinary user, outside the tool execution sandbox, no sudo",
+  "data": "counts only; no process identifiers, names, connection addresses, credentials, or payloads persisted",
+  "limitations": "C observer only, not the entire Swift provider or app. Recorded before the final conservative owner-change baseline invalidation refinement. RSS was not measured in this run."
+}

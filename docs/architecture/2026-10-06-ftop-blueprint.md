@@ -464,3 +464,168 @@ Recorded 2026-10-06. Each item replaces the matching decision or amendment above
   render server and the app still does no per-frame work. Constants are in `Theme.swift`.
 - Unmeasured: the render server now animates whenever readings change. Run
   `scripts/perf.sh` before calling the performance budget met or missed for this motion.
+
+## Historical amendment: read-only DNS inspection (2026-10-19)
+
+- `FtopCore/DNS.swift` defines a Sendable, Codable DNS snapshot independently of
+  the periodically sampled hardware `Snapshot`.
+- `FtopSensors/DNSReader.swift` uses read-only SystemConfiguration calls. Global
+  DNS takes priority; a service fallback is explicitly a reference. Manual and
+  dynamic service addresses stay separate without inferring DHCP.
+- More requests a fresh read through FtopApp on a utility task, outside the UI
+  and sampler queues. FtopUI receives only the value snapshot and presents a
+  native read-only menu; closing the anchor invalidates a pending result.
+- `ftop dns [--json]` exposes the same read without starting a panel. There is no
+  DNS timer, hostname query, SSID lookup, location request, network write, or
+  proxy-client integration in this stage. The existing root helper is unchanged.
+
+## Historical amendment: manual DNS editing (2026-10-19)
+
+- FtopCore carries a literal-address validator, automatic/custom mode, an
+  immutable editing target, and change/result values. The target identifies
+  the current network location, stable service ID, interface and original DNS
+  configuration. It is independent of monitor sampling and config.json5.
+- FtopSensors owns the public SystemConfiguration writer and authorization.
+  Save locks preferences without waiting, rechecks its target and configuration,
+  replaces only ServerAddresses, commits, applies, and rereads to verify. Other
+  DNS keys are preserved. A failed or mismatched result is surfaced rather than
+  followed by a blind retry or rollback.
+- FtopUI owns a compact temporary AppKit editor with automatic/custom choices,
+  editable address text, validation and busy/error states. It accepts value
+  models and an async save callback; it never imports FtopSensors. Native DNS
+  menu inspection stays read-only until the separate edit action is chosen.
+- FtopApp runs reads and saves on detached tasks. A save cannot be dismissed or
+  canceled halfway through a system commit. App termination is vetoed during a
+  save, and updater installation is deferred while the editor is open. Opening,
+  previewing, canceling or merely reading
+  performs no network write.
+- No new root helper, shell write command, worker, SSID access or proxy adapter
+  is added. The inspection CLI remains read-only. Effective VPN/domain resolver
+  selection can differ from the edited physical service's manual addresses.
+- Public API basis: Apple's [SCPreferences reference](https://developer.apple.com/documentation/systemconfiguration/scpreferences-ft8),
+  [commit/apply distinction](https://developer.apple.com/documentation/systemconfiguration/scpreferencescommitchanges(_:)),
+  and [DTS guidance on authorized network configuration](https://developer.apple.com/forums/thread/781901).
+
+## Superseded DNS architecture: explicit system-service edits (2026-10-28)
+
+The 2026-10-19 Wi-Fi automation and Clash/Mihomo cooperation architecture is
+retired. Its actors, rules, location dependencies and proxy adapters are removed.
+Historical design/validation remains in the retired plan and evidence only.
+
+- Read path: SystemConfiguration -> DNSReader -> DNSState -> DNSStatusMonitor /
+  explicit details read -> PanelModel / DNSDetails. Notifications and read-only
+  fallback do not call the writer. The physical service and system default may
+  legitimately differ under VPN/domain resolvers.
+- Edit path: explicit Edit -> DNSSettings.readTarget -> immutable DNSEditTarget ->
+  DNSEditor -> DNSAddressList -> explicit Save -> DNSChangeTransaction -> one native
+  authorization/lock/stage/commit/apply/readback -> DNSWriteResult -> editor status
+  and fresh PanelModel DNS. Only ServerAddresses changes.
+- DNSNativeBackend implements DNSWriteBackend directly. No retained automation
+  authority, before-mutation automation hook, session actor or location lookup.
+  Native service selection, baseline validation under lock, connection checks
+  before commit, full configuration verification and explicit partial failures
+  remain. The existing separate DNS-writer conflict guard is retained; it does
+  not recognize or coordinate proxy clients.
+- Automatic with no address key is a read-only no-op; an existing empty key must
+  be deleted. Custom input retains strict IPv4/IPv6 validation, stable ordering
+  and semantic duplicate removal. No automatic retries or blind rollback.
+- Saves run off the main thread. The editor cannot dismiss during a transaction;
+  app termination and update installation remain guarded. Verified success stays
+  visible and updates the system snapshot. Errors preserve input and invalidate
+  unsafe baselines. The setuid hardware helper is unchanged and never edits DNS.
+- No rule-store migration, cleanup of user files or live DNS mutation is performed
+  by this retirement. Existing on-disk rules/backups are left inert and unread.
+
+## Current DNS architecture: event-driven Wi-Fi rules (2026-10-28)
+
+This restores exact-SSID rules without restoring the retired proxy-cooperation
+architecture. The verified native transaction kernel remains the single write
+mechanism; the separate current-service editor has since been removed.
+
+- FtopCore owns versioned `DNSWiFiRulesConfiguration` values and strict validation,
+  plus the pure `DNSWiFiRulePolicy` state machine. The policy distinguishes absent
+  and empty ServerAddresses, compares the complete DNS fingerprint, suppresses a
+  stable verified match, and blocks external changes or failed writes per Wi-Fi
+  association. Exact-name lookup precedes the required default rule, so every
+  identifiable Wi-Fi has one value-only `DNSWiFiRuleMatch`. It has no system imports.
+- FtopSensors owns `DNSWiFiReader`/`DNSWiFiMonitor`, the v2 rule store, and the
+  retained native authorization/runtime primitives. CoreWLAN/CoreLocation are used
+  only here to read the connected SSID and connection identity. The monitor emits
+  SSID, BSSID, link, power and wake events; it does not scan or poll. The v2 store
+  validates and verifies its write and deliberately ignores retired v1 automation.
+- `DNSNativeBackend` implements the rule write protocol. Explicit Save & Apply may
+  acquire native session authorization;
+  later rule transactions use it noninteractively. Every write still uses
+  `DNSChangeTransaction`: authorize, lock without waiting, revalidate identity and
+  baseline, replace only ServerAddresses, commit, apply, and reread all DNS fields.
+- FtopApp's `DNSWiFiRulesCoordinator` is the only lifecycle coordinator. It starts
+  monitoring only for an enabled nonempty configuration, coalesces event bursts,
+  evaluates one exact rule, and owns generation/connection guards. Quit and update
+  installation are blocked only during an active rule operation. No sampler or
+  render tick can trigger a DNS write.
+- FtopUI receives value models and async callbacks only. The rules panel keeps its
+  draft on validation/write failures, has 520-point and compact 380-point fitted
+  forms, and uses only Theme-owned metrics/colors/fonts. Its non-removable default
+  card reuses the exact-rule mode/address controls without an SSID or delete action;
+  the list scroll area absorbs its extra height. More has one direct rules
+  row; its system tooltip formats a DNSState supplied by FtopApp. There is no details
+  menu or current-service editor. FtopUI never imports Sensors.
+- The persisted schema is version 2 in the existing verified store. Version 1
+  decodes with an Automatic default; first-load defaults keep the global switch off.
+- The read-only DNS path and CLI remain independent. Rules do not import or inspect
+  Clash/Mihomo/TUN clients, read their files, call their control endpoints, reload
+  them, or promise that a proxy/VPN immediately adopts the physical service DNS.
+
+## Amendment: read-only DNS monitor figure (2026-10-19)
+
+- PanelModel holds DNSState independently of the hardware Snapshot. Updating DNS
+  renders current geometry without invalidating measurements or resizing the
+  window. SceneBuilder measures a fixed row width and fits only its displayed
+  address text. DNS does not create a statistics column of its own.
+- DNSStatusMonitor owns native SystemConfiguration notifications on a utility
+  serial queue, with 150ms coalescing, equality suppression, wake refresh and a
+  60-second fallback. Generation checks in Sensors and App discard stopped or
+  superseded callbacks. Reads use the existing DNSReader, without DNS queries,
+  location permission or configuration changes.
+- Glyph.dns uses the native Core Graphics path renderer and existing badge
+  dimensions. ChipWindow reuses its text field only on hover changes, wraps at
+  characters, bounds itself to the screen and explicitly counts omitted lines.
+  Per-sample animation remains Core Animation; no new sampling-time view is added.
+
+## Amendment: per-process network activity (2026-10-19)
+
+- Core models optional per-process rates, usage availability and a separate
+  network-collection status. Network candidates are independent of the CPU and
+  memory helper lists and are folded by app before truncation. Each metric has
+  independent ranking state. Older JSON snapshots decode with network unknown.
+- CFtopSys dynamically loads private NetworkStatistics symbols and owns the
+  serial observer/query queue. Missing symbols, failed queries, bounded-source
+  overflow and stale results fail closed. FtopSensors computes per-source
+  monotonic deltas and checks process identities before publishing app rates.
+- Hardware collection only copies a completed cached batch. The process helper
+  remains unchanged. Native collection starts only for network process sorting
+  in a visible panel and is destroyed when no longer needed. No system settings
+  are written. Explicit CLI probe/doctor --network diagnostics wait at most
+  eight seconds for this independent reading.
+- Network figures are TCP/UDP socket activity, including local and proxy paths;
+  they are not a physical-interface bandwidth partition. No causal proxy
+  mapping, byte subtraction or physical-total percentage is inferred.
+
+## Refinement: process-network demand lease (2026-10-20)
+
+- A queue-confined collection controller owns one monotonic 20-second grace
+  deadline after network-sort demand ends. Repeated non-network starts keep the
+  same deadline; renewed network demand cancels it without restarting the native
+  reader. Cancellation tokens reject stale callbacks, and demand reconciliation
+  expires overdue leases before reuse. Hide/module-off/menu-bar-only/stop remain
+  immediate; CLI one-shot demand does not acquire a grace period.
+- Grace expiry immediately publishes a collection-off snapshot rather than
+  waiting for the next hardware tick. The app also checks its main-thread
+  departure deadline before rendering a cold return, rejects superseded callback
+  generations and clears traffic before showing/waking the panel. UI snapshots
+  older than six seconds cannot be presented as a warm return.
+- Core models loading independently from availability and failure. Provider
+  starts are idempotent; initial baselines report loading, failures keep their
+  diagnostic/backoff. Per-source elapsed time is finite and positive, including
+  supported 10-second refresh; the independent absolute native-frame age limit
+  stays six seconds. No helper privilege or system-setting path changes.

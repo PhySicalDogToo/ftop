@@ -1,0 +1,56 @@
+{
+  "after": {
+    "active_tun_enabled": true,
+    "configuration_unchanged_during_read": true,
+    "mihomo_confirmed": true,
+    "saved_dns_mode": "redir-host",
+    "saved_tun_enabled": true
+  },
+  "before": {
+    "active_tun_enabled": true,
+    "configuration_unchanged_during_read": true,
+    "mihomo_confirmed": true,
+    "saved_dns_mode": "redir-host",
+    "saved_tun_enabled": true
+  },
+  "experiments": [
+    {
+      "curl_exit": 0,
+      "download_body_bytes": 2097152,
+      "experiment": "public_https_get_2mib_retry_ipv4",
+      "http_status": 200,
+      "observation": {
+        "completed_frames": 14,
+        "roles": [
+          {
+            "baseline_only_sources": 0,
+            "live_uid_matches": 11,
+            "peak_download_Bps": 143903.47,
+            "peak_upload_Bps": 11.97,
+            "received_delta": 2079251,
+            "sent_delta": 24
+          },
+          {
+            "baseline_only_sources": 0,
+            "live_uid_matches": 1608,
+            "peak_download_Bps": 485708.53,
+            "peak_upload_Bps": 487856.75,
+            "received_delta": 5092637,
+            "sent_delta": 3080157
+          }
+        ]
+      },
+      "observer_exit": 0,
+      "role_order": [
+        "original_client",
+        "clash_core_concurrent"
+      ],
+      "transfer_seconds": 23.405101,
+      "upload_body_bytes": 0
+    }
+  ],
+  "public_get_body_bytes_across_probe_runs": 4194304,
+  "public_get_body_limit_bytes_this_run": 2097152,
+  "runtime_configuration_unchanged": true,
+  "scope": "Production C socket counters only. First observations/short-lived sources can be missed. Proxy activity is concurrent background-inclusive, never deduplicated or physical throughput."
+}

@@ -1,0 +1,740 @@
+{
+  "date": "2026-10-21",
+  "build": 12,
+  "section_sha256": "adb611dfddbd5d923abbc5dec6001cea8dfe8dc13b4f4caa156907bc0fd0656a",
+  "layout": "visible single-column three-row layout, approximately 349x383 pt; motion enabled, menu bar CPU enabled",
+  "dns_automation": "off in isolated home",
+  "extra_traffic_generated": false,
+  "phases": [
+    {
+      "phase": "cpu_1s",
+      "refresh_seconds": 1,
+      "warmup_seconds": 3,
+      "helper_stable": true,
+      "samples": [
+        {
+          "cpu_percent_one_core": 0.7,
+          "top_mem_mib": 31.376,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.4,
+          "top_mem_mib": 32.376,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 1.3,
+          "top_mem_mib": 31.376,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 1.2,
+          "top_mem_mib": 31.4229,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 0.8,
+          "top_mem_mib": 31.4229,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 1.28,
+        "cpu_min": 0.7,
+        "cpu_max": 2.4,
+        "top_mem_mib_min": 31.376,
+        "top_mem_mib_max": 32.376
+      }
+    },
+    {
+      "phase": "memory_1s",
+      "refresh_seconds": 1,
+      "warmup_seconds": 2,
+      "helper_stable": true,
+      "samples": [
+        {
+          "cpu_percent_one_core": 1.4,
+          "top_mem_mib": 31.4229,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 1.4,
+          "top_mem_mib": 31.4229,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 1.1,
+          "top_mem_mib": 31.4229,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 0.9,
+          "top_mem_mib": 32.4229,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 1.0,
+          "top_mem_mib": 32.4229,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 1.16,
+        "cpu_min": 0.9,
+        "cpu_max": 1.4,
+        "top_mem_mib_min": 31.4229,
+        "top_mem_mib_max": 32.4229
+      }
+    },
+    {
+      "phase": "download_1s",
+      "refresh_seconds": 1,
+      "warmup_seconds": 6,
+      "helper_stable": true,
+      "samples": [
+        {
+          "cpu_percent_one_core": 1.8,
+          "top_mem_mib": 39.4229,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 3.3,
+          "top_mem_mib": 39.4229,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.9,
+          "top_mem_mib": 40.4385,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 4.2,
+          "top_mem_mib": 40.4385,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.6,
+          "top_mem_mib": 41.4541,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 2.96,
+        "cpu_min": 1.8,
+        "cpu_max": 4.2,
+        "top_mem_mib_min": 39.4229,
+        "top_mem_mib_max": 41.4541
+      }
+    },
+    {
+      "phase": "upload_1s",
+      "refresh_seconds": 1,
+      "warmup_seconds": 3,
+      "helper_stable": true,
+      "samples": [
+        {
+          "cpu_percent_one_core": 1.8,
+          "top_mem_mib": 41.4541,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.3,
+          "top_mem_mib": 42.4697,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 3.4,
+          "top_mem_mib": 42.4697,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.1,
+          "top_mem_mib": 41.4697,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.3,
+          "top_mem_mib": 42.4697,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 2.38,
+        "cpu_min": 1.8,
+        "cpu_max": 3.4,
+        "top_mem_mib_min": 41.4541,
+        "top_mem_mib_max": 42.4697
+      }
+    },
+    {
+      "phase": "download_2s",
+      "refresh_seconds": 2,
+      "warmup_seconds": 4,
+      "helper_stable": true,
+      "samples": [
+        {
+          "cpu_percent_one_core": 0.9,
+          "top_mem_mib": 42.4697,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.3,
+          "top_mem_mib": 43.4697,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 1.9,
+          "top_mem_mib": 43.4697,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 1.7,
+          "top_mem_mib": 43.4697,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.1,
+          "top_mem_mib": 43.4697,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 1.78,
+        "cpu_min": 0.9,
+        "cpu_max": 2.3,
+        "top_mem_mib_min": 42.4697,
+        "top_mem_mib_max": 43.4697
+      }
+    },
+    {
+      "phase": "download_half_second",
+      "refresh_seconds": 0.5,
+      "warmup_seconds": 4,
+      "helper_stable": true,
+      "samples": [
+        {
+          "cpu_percent_one_core": 2.2,
+          "top_mem_mib": 43.501,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 5.4,
+          "top_mem_mib": 43.5166,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.7,
+          "top_mem_mib": 43.5322,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 4.1,
+          "top_mem_mib": 44.5791,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 3.1,
+          "top_mem_mib": 44.5791,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 3.5,
+        "cpu_min": 2.2,
+        "cpu_max": 5.4,
+        "top_mem_mib_min": 43.501,
+        "top_mem_mib_max": 44.5791
+      }
+    },
+    {
+      "phase": "download_1s_repeat",
+      "refresh_seconds": 1,
+      "warmup_seconds": 4,
+      "helper_stable": true,
+      "samples": [
+        {
+          "cpu_percent_one_core": 2.3,
+          "top_mem_mib": 44.5791,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.6,
+          "top_mem_mib": 44.5791,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.1,
+          "top_mem_mib": 44.5791,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 3.7,
+          "top_mem_mib": 44.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.9,
+          "top_mem_mib": 44.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 2.72,
+        "cpu_min": 2.1,
+        "cpu_max": 3.7,
+        "top_mem_mib_min": 44.5791,
+        "top_mem_mib_max": 44.5947
+      }
+    },
+    {
+      "phase": "cpu_grace",
+      "refresh_seconds": 1,
+      "warmup_seconds": 1,
+      "helper_stable": true,
+      "samples": [
+        {
+          "cpu_percent_one_core": 2.0,
+          "top_mem_mib": 43.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.5,
+          "top_mem_mib": 42.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.3,
+          "top_mem_mib": 43.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.5,
+          "top_mem_mib": 43.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.1,
+          "top_mem_mib": 43.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 2.28,
+        "cpu_min": 2.0,
+        "cpu_max": 2.5,
+        "top_mem_mib_min": 42.5947,
+        "top_mem_mib_max": 43.5947
+      }
+    },
+    {
+      "phase": "cpu_after_grace",
+      "refresh_seconds": 1,
+      "warmup_seconds": 10,
+      "helper_stable": true,
+      "samples": [
+        {
+          "cpu_percent_one_core": 0.8,
+          "top_mem_mib": 39.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 0.8,
+          "top_mem_mib": 39.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 1.5,
+          "top_mem_mib": 39.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 1.7,
+          "top_mem_mib": 39.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 1.1,
+          "top_mem_mib": 39.5947,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 1.18,
+        "cpu_min": 0.8,
+        "cpu_max": 1.7,
+        "top_mem_mib_min": 39.5947,
+        "top_mem_mib_max": 39.5947
+      }
+    },
+    {
+      "phase": "download_large_1s",
+      "refresh_seconds": 1,
+      "layout": "visible single-column five-row detailed layout, approximately 462x534 pt",
+      "samples": [
+        {
+          "cpu_percent_one_core": 2.0,
+          "top_mem_mib": 51.626,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.6,
+          "top_mem_mib": 51.626,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.2,
+          "top_mem_mib": 51.626,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 3.4,
+          "top_mem_mib": 51.626,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.7,
+          "top_mem_mib": 51.626,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 2.58,
+        "cpu_min": 2.0,
+        "cpu_max": 3.4,
+        "top_mem_mib_min": 51.626,
+        "top_mem_mib_max": 51.626
+      }
+    },
+    {
+      "phase": "download_micro_1s",
+      "refresh_seconds": 1,
+      "layout": "visible micro layout, approximately 146x39 pt; no process figures",
+      "samples": [
+        {
+          "cpu_percent_one_core": 1.9,
+          "top_mem_mib": 43.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.0,
+          "top_mem_mib": 43.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.9,
+          "top_mem_mib": 43.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 2.0,
+          "top_mem_mib": 42.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 3.1,
+          "top_mem_mib": 43.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 2.38,
+        "cpu_min": 1.9,
+        "cpu_max": 3.1,
+        "top_mem_mib_min": 42.6416,
+        "top_mem_mib_max": 43.6416
+      }
+    },
+    {
+      "phase": "hidden_menu_bar",
+      "refresh_seconds": 1,
+      "layout": "no visible windows after native control Hide action; CPU menu bar on",
+      "samples": [
+        {
+          "cpu_percent_one_core": 0.1,
+          "top_mem_mib": 46.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 0.2,
+          "top_mem_mib": 46.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 0.1,
+          "top_mem_mib": 46.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 0.3,
+          "top_mem_mib": 46.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 0.1,
+          "top_mem_mib": 46.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 0.16,
+        "cpu_min": 0.1,
+        "cpu_max": 0.3,
+        "top_mem_mib_min": 46.6416,
+        "top_mem_mib_max": 46.6416
+      }
+    },
+    {
+      "phase": "hidden_no_menu_bar",
+      "refresh_seconds": 1,
+      "layout": "same hidden panel; menu bar off in isolated config",
+      "samples": [
+        {
+          "cpu_percent_one_core": 0.0,
+          "top_mem_mib": 44.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 0.0,
+          "top_mem_mib": 44.6416,
+          "roles": [
+            "ftop-helper",
+            "FtopPanel"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 0.0,
+          "top_mem_mib": 44.6416,
+          "roles": [
+            "ftop-helper",
+            "FtopPanel"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 0.0,
+          "top_mem_mib": 44.6416,
+          "roles": [
+            "ftop-helper",
+            "FtopPanel"
+          ]
+        },
+        {
+          "cpu_percent_one_core": 0.4,
+          "top_mem_mib": 44.6416,
+          "roles": [
+            "FtopPanel",
+            "ftop-helper"
+          ]
+        }
+      ],
+      "summary": {
+        "cpu_mean": 0.08,
+        "cpu_min": 0.0,
+        "cpu_max": 0.4,
+        "top_mem_mib_min": 44.6416,
+        "top_mem_mib_max": 44.6416
+      }
+    }
+  ],
+  "latest_bundle_full_sha256": "afdac9e51ad054c495d699f881ad2c3bb6f7ed39fda5c00a359fbbf259b5e7d1",
+  "version": "0.2.6",
+  "installed_build": 11,
+  "hardware": "Apple M4, 10 logical CPUs, 16 GiB RAM",
+  "os": "macOS 15.6.1 (24G90)",
+  "sample_intervals_seconds": 3,
+  "first_top_lifetime_sample_excluded": true,
+  "visibility": "Observed with native CUA screenshots before visible tests; after native control Hide, CUA returned noWindowsAvailable. No subsequent CUA app query during hidden tests.",
+  "background": "Busy user environment; visible system CPU approximately 37\u201380%, approximately 11 GiB swap in use. No user process was stopped.",
+  "scope_notes": [
+    "Single-machine sequential screening under varying background load; no controlled savings or version regression claim.",
+    "CPU is percent of one core; short-window maxima are not instantaneous peaks.",
+    "Memory is summed top MEM; shared pages may overlap; not independently measured RSS or an energy result.",
+    "No rules were enabled; automatic DNS periodic verification and real DNS/TUN writes were not exercised.",
+    "Extra phases retained the same panel/helper IDs in every raw sample; main 9 phases verified helper before/after.",
+    "CPU grace phase measures the early retained-reader period; the following off phase starts more than 25 seconds after departure.",
+    "The native observer uses its own two-second query timer; panel refresh interval is a separate cadence.",
+    "Physical footprint from sample is panel-only: CPU mode 35.9M; download 42.6M. Different tool/window, not summed with top MEM."
+  ]
+}

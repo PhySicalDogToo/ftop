@@ -69,6 +69,8 @@ public struct SceneBuilder {
     public var style: PanelStyle
     /// What the process list is ranked by.
     public var processSort: ProcessSort = .cpu
+    /// Supplied by the independent DNS configuration monitor, never by hardware sampling.
+    public var dns = DNSState()
 
     public init(snapshot: Snapshot?, machine: MachineShape, modules: [ModuleID] = ModuleID.allCases, style: PanelStyle = PanelStyle()) {
         self.snapshot = snapshot
@@ -116,14 +118,13 @@ public struct SceneBuilder {
         }
     }
 
-    /// The blocks a column layout stacks, in order. `.gpu` stands for the rows of the added
-    /// readings (GPU, power): they follow the last of CPU, memory, and network, and are left
-    /// out of the compact layout, which has no labeled rows at all.
+    /// Keep the statistics in their configured order, followed by added readings and
+    /// finally processes. Re-enabling a module may have appended it after processes in
+    /// the saved configuration. `.gpu` stands for GPU/power detail rows, omitted in compact.
     static func stack(_ candidate: LayoutCandidate, modules: [ModuleID]) -> [ModuleID] {
-        var blocks = modules.filter { ModuleID.stacked.contains($0) && ($0 != .processes || candidate.processCount > 0) }
-        guard candidate.tier != .compact, modules.contains(where: ModuleID.added.contains) else { return blocks }
-        let position = blocks.lastIndex { $0 != .processes }.map { $0 + 1 } ?? blocks.count
-        blocks.insert(.gpu, at: position)
+        var blocks = modules.filter { ModuleID.stacked.contains($0) && $0 != .processes }
+        if candidate.tier != .compact, modules.contains(.gpu) || modules.contains(.power) { blocks.append(.gpu) }
+        if modules.contains(.processes), candidate.processCount > 0 { blocks.append(.processes) }
         return blocks
     }
 
@@ -171,6 +172,7 @@ public struct SceneBuilder {
     private var power: PowerSample? { snapshot?.power.value }
     private var showsGPU: Bool { modules.contains(.gpu) }
     private var showsPower: Bool { modules.contains(.power) }
+    private var showsDNS: Bool { modules.contains(.dns) }
     /// The GPU has a column of its own beside the core columns wherever those are drawn full size.
     private var gpuColumn: Bool { showsGPU && modules.contains(.cpu) }
     private var cpuHover: String { cpu.map { Strings.pick("CPU usage", "处理器总占用") + " \(Format.percent($0.usage))%" } ?? cpuReason }
@@ -603,14 +605,57 @@ public struct SceneBuilder {
         return scene
     }
 
-    /// The process list: one entry a row, behind the app's icon in a badge whose arc is
-    /// the entry's share of what is in use, with the one figure the list is ranked by.
-    /// `wide` is the large window's form: two badges above the list switch what it is
-    /// ranked by, and the ranking continues in a second column.
+    private var dnsHover: String {
+        var lines = [Strings.pick("Current DNS", "当前 DNS"), DNSDetails.sourceLabel(dns.source)]
+        lines += dns.servers.prefix(20)
+        if dns.servers.count > 20 {
+            lines.append(
+                Strings.pick(
+                    "More addresses: More → Wi-Fi DNS rules",
+                    "更多地址：更多 → Wi-Fi DNS 规则"))
+        }
+        if dns.servers.isEmpty, let reason = dns.unavailableReason { lines.append(reason) }
+        return lines.joined(separator: "\n")
+    }
+
+    /// A fixed row. Long addresses lose text, never space belonging to another module.
+    /// The complete addresses and source are in the existing hover chip.
+    private func dnsModule(width fixed: CGFloat?) -> Scene {
+        let total = fixed ?? style.dnsMinimumWidth
+        let start = style.badge + style.badgeGap
+        let available = max(0, total - start)
+        var scene = badge(.dns, .disc(.secondary), at: .zero)
+        scene.size = CGSize(width: total, height: style.badge)
+        scene.hovers.append(HoverRegion(rect: CGRect(origin: .zero, size: scene.size), text: dnsHover))
+        guard available > 0 else { return scene }
+        let font = style.bodyStrong
+        let value: String
+        if dns.source == .serviceReference {
+            value = Strings.pick("Reference", "服务参考")
+        } else if dns.source == .systemDefault, let first = dns.servers.first {
+            let all = dns.servers.joined(separator: " · ")
+            if width(all, font) <= available {
+                value = all
+            } else {
+                let remainder = dns.servers.count > 1 && available >= style.dnsCountAddressRoom ? " +\(dns.servers.count - 1)" : ""
+                let room = max(0, available - width(remainder, font))
+                value = Typesetter.truncated(first, font, to: room) + remainder
+            }
+        } else {
+            value = "—"
+        }
+        scene.texts.append(
+            text(
+                Typesetter.truncated(value, font, to: available), font, dns.source == .systemDefault ? .ink : .secondary,
+                x: start, baseline: style.badge / 2 + cap(font) / 2))
+        return scene
+    }
+
+    /// One ranking, continued in a second column in the large form. All four sorts
+    /// reserve the same figure width and keep their selection in smaller forms.
     private func processModule(width fixed: CGFloat?, count: Int, roomy: Bool, wide: Bool) -> Scene {
         let nameWidth = roomy ? style.processNameWideWidth : style.processNameWidth
-        let valueRoom = width("888.8", style.bodyStrong) + style.points(3) + width("%", style.caption)
-        let single = style.badge + style.badgeLeadGap + nameWidth + style.rowGap + valueRoom
+        let single = style.badge + style.badgeLeadGap + nameWidth + style.rowGap + style.processFigureRoom
         let total = fixed ?? (wide ? single * 2 + style.columnGap : single)
         let columnWidth = wide ? (total - style.columnGap) / 2 : total
         let pitch = style.badge + style.processRowGap
@@ -618,70 +663,77 @@ public struct SceneBuilder {
         let rowsHeight = style.badge + CGFloat(max(0, count - 1)) * pitch
         var scene = Scene()
         scene.size = CGSize(width: total, height: header + rowsHeight)
-
-        // The memory ranking needs a helper that provides it; without one the list stays by processor.
-        let list = snapshot?.processes.value
-        let sort: ProcessSort = processSort == .memory && list?.byMemory.isEmpty == false ? .memory : .cpu
+        let sort = processSort
         if wide {
             for (index, option) in ProcessSort.allCases.enumerated() {
                 let rect = CGRect(x: CGFloat(index) * (style.badge + style.badgeGap), y: 0, width: style.badge, height: style.badge)
-                let paint: Paint = option == .cpu ? .performance : PanelStyle.pressurePaint(.normal)
-                scene.shapes.append(ShapeItem(rect: rect, paint: paint, kind: .toggle(glyph: option == .cpu ? .cpu : .memory, on: option == sort, paint: paint)))
-                let hover =
-                    option == .cpu
-                    ? Strings.pick("Rank processes by processor", "按处理器占用排列进程") : Strings.pick("Rank processes by memory", "按内存占用排列进程")
+                let paint = ProcessPresentation.paint(option)
+                scene.shapes.append(ShapeItem(rect: rect, paint: paint, kind: .toggle(glyph: ProcessPresentation.glyph(option), on: option == sort, paint: paint)))
+                let hover = Strings.pick("Rank processes by ", "进程排序：") + ProcessPresentation.name(option)
                 scene.hovers.append(HoverRegion(rect: rect.insetBy(dx: -style.badgeGap / 2, dy: 0), text: hover))
-                scene.clicks.append(ClickRegion(rect: rect.insetBy(dx: -style.badgeGap / 2, dy: -style.points(3)), action: .sort(option)))
+                scene.clicks.append(ClickRegion(rect: rect.insetBy(dx: -style.badgeGap / 2, dy: -style.processUnitGap), action: .sort(option)))
             }
         }
-        guard let list else {
-            scene.texts.append(text("—", style.body, .secondary, x: 0, baseline: header + style.badge / 2 + cap(style.body) / 2))
-            scene.hovers.append(
-                HoverRegion(rect: CGRect(x: 0, y: header, width: total, height: rowsHeight), text: snapshot?.processes.reason ?? Strings.noReading))
+        let list = snapshot?.processes.value
+        let selected = list?.entries(sortedBy: sort) ?? []
+        guard let list, !selected.isEmpty else {
+            let placeholder = ProcessPresentation.placeholder(list, sortedBy: sort)
+            scene.texts.append(
+                text(
+                    Typesetter.truncated(placeholder, style.body, to: columnWidth), style.body, .secondary, x: 0, baseline: header + style.badge / 2 + cap(style.body) / 2
+                ))
+            let reason = snapshot?.processes.reason ?? ProcessPresentation.emptyReason(list, sortedBy: sort)
+            scene.hovers.append(HoverRegion(rect: CGRect(x: 0, y: header, width: total, height: rowsHeight), text: reason))
             return scene
         }
 
-        // Shares are of what is in use right now, so the arcs of a busy list add up to about a full turn.
-        // Both sides are in percent of one core here; only the figure that is shown is a share of the machine.
         let cpuInUse = max(cpu.map { $0.usage * Double(coreCount) * 100 } ?? 0, list.top.reduce(0) { $0 + $1.cpuPercent }, 1)
         let memoryInUse = Double(max(memory?.used ?? 0, list.byMemory.reduce(0) { $0 + $1.memoryBytes }, 1))
-        func memoryParts(_ bytes: UInt64) -> (number: String, unit: String) {
-            let text = Format.processMemory(bytes)
-            return (String(text.dropLast()), String(text.suffix(1)))
+        func indexed(_ samples: [ProcessSample]) -> [String: ProcessSample] {
+            Dictionary(samples.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         }
-        let other = Dictionary((sort == .cpu ? list.byMemory : list.top).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let entries = (sort == .cpu ? list.top : list.byMemory).prefix(count * (wide ? 2 : 1))
+        let cpuEntries = indexed(list.top)
+        let memoryEntries = indexed(list.byMemory)
+        let networkEntries = indexed(list.byDownload + list.byUpload)
         var rows: [ProcessRow] = []
-        for entry in entries {
-            // The other figure comes from the other ranking when the entry is in it: that list sums the app's processes for that measure.
-            let cpuPercent = sort == .cpu ? entry.cpuPercent : (other[entry.id]?.cpuPercent ?? entry.cpuPercent)
-            let bytes = sort == .memory ? entry.memoryBytes : (other[entry.id]?.memoryBytes ?? entry.memoryBytes)
-            let percent = processShare(cpuPercent)
-            let held = memoryParts(bytes)
+        for entry in selected.prefix(count * (wide ? 2 : 1)) {
+            // A bare PID can identify a different process in the helper's older sample.
+            // Only a stable app bundle can bridge usage into a network-only entry.
+            let canJoinUsage = entry.usageAvailable || entry.appPath != nil
+            let cpuEntry = canJoinUsage ? (cpuEntries[entry.id] ?? entry) : entry
+            let memoryEntry = canJoinUsage ? (memoryEntries[entry.id] ?? entry) : entry
+            let networkEntry = entry.network != nil ? entry : (networkEntries[entry.id] ?? entry)
+            let percent = ProcessPresentation.figure(cpuEntry, sortedBy: .cpu, cores: coreCount)
+            let held = ProcessPresentation.figure(memoryEntry, sortedBy: .memory, cores: coreCount)
+            let down = list.networkStatus.isAvailable ? ProcessPresentation.figure(networkEntry, sortedBy: .download, cores: coreCount) : .unavailable
+            let up = list.networkStatus.isAvailable ? ProcessPresentation.figure(networkEntry, sortedBy: .upload, cores: coreCount) : .unavailable
+            let figure = ProcessPresentation.figure(entry, sortedBy: sort, cores: coreCount)
             let members = entry.members.prefix(4).map { member -> ProcessCard.Member in
-                if sort == .cpu { return .init(name: member.name, value: processShare(member.cpuPercent), unit: "%") }
-                let parts = memoryParts(member.memoryBytes)
-                return .init(name: member.name, value: parts.number, unit: parts.unit)
+                let figure = ProcessPresentation.figure(member, sortedBy: sort, cores: coreCount)
+                return .init(name: member.name, value: figure.number, unit: figure.unit)
             }
             let card = ProcessCard(
-                name: entry.name, appPath: entry.appPath, cpu: percent, cpuShare: cpuPercent / cpuInUse, memory: held.number, memoryUnit: held.unit,
-                memoryShare: Double(bytes) / memoryInUse, members: Array(members))
+                name: entry.name, appPath: entry.appPath, cpu: percent.number, cpuShare: cpuEntry.usageAvailable ? cpuEntry.cpuPercent / cpuInUse : 0,
+                memory: held.number, memoryUnit: held.unit, memoryShare: memoryEntry.usageAvailable ? Double(memoryEntry.memoryBytes) / memoryInUse : 0,
+                members: Array(members), download: down.number, downloadUnit: down.unit, upload: up.number, uploadUnit: up.unit,
+                networkNote: [
+                    list.networkStatus.isAvailable ? ProcessPresentation.overflowNote(networkEntry.network) : nil,
+                    ProcessPresentation.localizedReason(list.networkStatus.reason), ProcessPresentation.localizedNote(list.networkNote),
+                ]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n"))
             rows.append(
                 ProcessRow(
-                    key: entry.id, name: entry.name, appPath: entry.appPath, value: sort == .cpu ? percent : held.number,
-                    unit: sort == .cpu ? "%" : held.unit, share: sort == .cpu ? card.cpuShare : card.memoryShare, card: card))
+                    key: entry.id, name: entry.name, appPath: entry.appPath, value: figure.number, unit: figure.unit,
+                    share: sort == .cpu ? card.cpuShare : (sort == .memory ? card.memoryShare : 0), card: card))
         }
-        // A list too short to fill both columns is split evenly between them, not left as one full column and a stub.
         let perColumn = wide ? max(1, min(count, (rows.count + 1) / 2)) : count
         let item = ProcessRowsItem(
             rect: CGRect(x: 0, y: header, width: total, height: rowsHeight), rows: rows, perColumn: perColumn, rowHeight: style.badge,
-            columnWidth: columnWidth,
-            columnGap: style.columnGap, pitch: pitch, paint: sort == .cpu ? .performance : PanelStyle.pressurePaint(.normal))
+            columnWidth: columnWidth, columnGap: style.columnGap, pitch: pitch, paint: ProcessPresentation.paint(sort))
         scene.processes = item
         for (index, row) in rows.enumerated() {
             let frame = item.frame(at: index).offsetBy(dx: 0, dy: header)
             let region = frame.insetBy(dx: 0, dy: -style.processRowGap / 2)
-            // The pointer lights the row; the detail is in the card a click brings up, so no chip here.
             scene.hovers.append(HoverRegion(rect: region, text: "", processKey: row.key))
             scene.clicks.append(ClickRegion(rect: region, action: .process(row.key)))
         }
@@ -702,6 +754,7 @@ public struct SceneBuilder {
         // `.gpu` stands for the rows of every added reading; see `stack`.
         case .gpu: return detailRows(width: width) ?? Scene()
         case .power: return Scene()
+        case .dns: return dnsModule(width: width)
         }
     }
 
@@ -717,18 +770,30 @@ public struct SceneBuilder {
         let memoryList = candidate.memoryList && candidate.processCount > 0 && modules.contains(.processes)
         // The wide process list is a column group of its own, twice a list's width,
         // and everything else stacks in the first column.
-        let groups: [[ModuleID]]
+        var groups: [[ModuleID]]
         if memoryList, visible.count > 1 {
             groups = [visible.filter { $0 != .processes }, [.processes]]
         } else {
             groups = split(visible, into: min(candidate.columns, visible.count))
+        }
+        // DNS belongs to the statistics stack, never to a column of its own.
+        if showsDNS {
+            if groups.isEmpty {
+                groups = [[.dns]]
+            } else {
+                let column = groups.lastIndex { $0.contains { $0 != .processes } } ?? 0
+                let position = groups[column].firstIndex(of: .processes) ?? groups[column].endIndex
+                groups[column].insert(.dns, at: position)
+            }
         }
         let roomy = groups.count > 1 || memoryList
 
         // The network pair and the pairs of the added readings are one grid of badges:
         // the same distance between all of its rows.
         func gap(after position: Int, in group: [ModuleID]) -> CGFloat {
-            group[position] == .network && group.indices.contains(position + 1) && group[position + 1] == .gpu ? style.innerGap : style.moduleGap
+            guard group.indices.contains(position + 1) else { return style.moduleGap }
+            return (group[position] == .network && group[position + 1] == .gpu)
+                || ([ModuleID.network, .gpu].contains(group[position]) && group[position + 1] == .dns) ? style.innerGap : style.moduleGap
         }
 
         let share = extra.width / CGFloat(groups.count + (memoryList ? 1 : 0))
@@ -843,6 +908,10 @@ public struct SceneBuilder {
             scene.append(make(index % 2 == 0 ? padX : side, y + style.badge / 2), at: .zero)
             if index % 2 == 1 || index == figures.count - 1 { y += style.badge + gap }
         }
+        if showsDNS {
+            scene.append(dnsModule(width: total), at: CGPoint(x: padX, y: y))
+            y += style.badge + gap
+        }
         scene.size = CGSize(width: total + padX * 2, height: y - gap + padY)
         return scene
     }
@@ -902,6 +971,10 @@ public struct SceneBuilder {
             for (index, block) in lower.enumerated() { scene.append(block, at: CGPoint(x: padX + column(index), y: 0)) }
             y += style.badge + gap
         }
+        if showsDNS {
+            scene.append(dnsModule(width: total), at: CGPoint(x: padX, y: y))
+            y += style.badge + gap
+        }
         scene.size = CGSize(width: total + padX * 2, height: y - gap + padY)
         return scene
     }
@@ -949,21 +1022,42 @@ public struct SceneBuilder {
             scene.append(shortRate(.upload, \.upBytesPerSecond, x: x, middle: middle), at: .zero)
             x += shortRateWidth + gap
         }
+        if showsDNS {
+            let room = rich ? style.dnsStripWidth : style.badge
+            scene.append(dnsModule(width: room), at: CGPoint(x: x, y: padY))
+            x += room + gap
+        }
         if rich, modules.contains(.processes) {
-            let nameRoom = style.points(104)
-            let percentWidth = width("100%", style.body)
+            let nameRoom = style.processStripNameWidth
             let baseline = middle + cap(style.body) / 2
-            if let top = snapshot?.processes.value?.top.first {
-                let name = text(Typesetter.truncated(top.name, style.body, to: nameRoom), style.body, .ink, x: x, baseline: baseline)
-                let percent = processShare(top.cpuPercent) + "%"
-                let number = text(percent, style.body, .secondary, x: name.x + name.width + style.points(4), baseline: baseline)
-                scene.texts += [name, number]
-                scene.hovers.append(
-                    HoverRegion(
-                        rect: name.frame.union(number.frame),
-                        text: "\(top.name) · CPU \(percent) · " + Strings.pick("memory", "内存") + " \(Format.processMemory(top.memoryBytes))"))
+            let badge = CGRect(x: x, y: middle - style.badge / 2, width: style.badge, height: style.badge)
+            scene.shapes.append(ShapeItem(rect: badge, paint: .secondary, kind: .badge(glyph: ProcessPresentation.glyph(processSort), tint: .secondary)))
+            let nameX = badge.maxX + style.badgeLeadGap
+            let list = snapshot?.processes.value
+            let top = list?.entries(sortedBy: processSort).first
+            let numberX = nameX + nameRoom + style.processUnitGap
+            if let top {
+                let figure = ProcessPresentation.figure(top, sortedBy: processSort, cores: coreCount)
+                scene.texts.append(text(Typesetter.truncated(top.name, style.body, to: nameRoom), style.body, .ink, x: nameX, baseline: baseline))
+                scene.texts.append(text(figure.text, style.body, .secondary, x: numberX, baseline: baseline))
+                let cpu = ProcessPresentation.figure(top, sortedBy: .cpu, cores: coreCount)
+                let cpuText = cpu.unit.isEmpty ? cpu.number : cpu.number + cpu.unit
+                let held = ProcessPresentation.figure(top, sortedBy: .memory, cores: coreCount)
+                var detail = "\(top.name) · CPU \(cpuText) · " + Strings.pick("memory", "内存") + " \(held.text)"
+                if processSort.isNetwork { detail += "\n" + ProcessPresentation.name(processSort) + " " + figure.text }
+                if let overflow = ProcessPresentation.overflowNote(top.network) { detail += "\n" + overflow }
+                if let note = ProcessPresentation.localizedNote(list?.networkNote), !note.isEmpty { detail += "\n" + note }
+                scene.hovers.append(HoverRegion(rect: CGRect(x: x, y: padY, width: numberX + style.processFigureRoom - x, height: style.badge), text: detail))
+            } else {
+                let placeholder = ProcessPresentation.placeholder(list, sortedBy: processSort)
+                scene.texts.append(
+                    text(
+                        Typesetter.truncated(placeholder, style.body, to: nameRoom + style.processUnitGap + style.processFigureRoom), style.body, .secondary,
+                        x: nameX, baseline: baseline))
+                let reason = snapshot?.processes.reason ?? ProcessPresentation.emptyReason(list, sortedBy: processSort)
+                scene.hovers.append(HoverRegion(rect: CGRect(x: x, y: padY, width: numberX + style.processFigureRoom - x, height: style.badge), text: reason))
             }
-            x += nameRoom + style.points(4) + percentWidth + gap
+            x = numberX + style.processFigureRoom + gap
         }
         scene.size = CGSize(width: x - gap + padX, height: style.badge + padY * 2)
         return scene
@@ -1003,6 +1097,10 @@ public struct SceneBuilder {
             row(shortRate(.download, \.downBytesPerSecond, x: padX, middle: y + style.badge / 2))
             row(shortRate(.upload, \.upBytesPerSecond, x: padX, middle: y + style.badge / 2))
         }
+        if showsDNS {
+            scene.append(dnsModule(width: total), at: CGPoint(x: padX, y: y))
+            y += style.badge + gap
+        }
         scene.size = CGSize(width: total + padX * 2, height: y - gap + padY)
         return scene
     }
@@ -1017,6 +1115,7 @@ public struct SceneBuilder {
         var rings: [(Glyph, Dial, String)] = [(.cpu, cpuDial, cpuHover)]
         if showsGPU { rings.append((.gpu, gpuDial, gpuHover)) }
         rings.append((.memory, memoryDial, memoryHover))
+        if showsDNS { rings.append((.dns, .disc(.secondary), dnsHover)) }
         for (glyph, dial, hover) in rings {
             scene.append(badge(glyph, dial, at: CGPoint(x: x, y: padY)), at: .zero)
             scene.hovers.append(HoverRegion(rect: CGRect(x: x - gap / 2, y: 0, width: style.badge + gap, height: style.badge + padY * 2), text: hover))

@@ -55,8 +55,9 @@ A reading the hardware does not give is shown as unavailable, never as zero.
   passes its neighbor slides; one that goes further turns over where it stands, so
   rows never fly across the list.
 - **Press a process.** The row gives under the pointer and a card comes up beside it:
-  CPU, memory, and the helper processes inside the app. In a large window two badges
-  switch the ranking between CPU and memory.
+  CPU, memory, download, upload and the helper processes inside the app. Four native
+  badges switch the large list between these metrics. **More → Process ranking**
+  offers the same choice in smaller windows. Rates use KB/s, MB/s and larger units.
 - **Nearly free when you are not looking.** Hidden or fully covered, ftop stops reading
   everything except the one reading in the menu bar.
 
@@ -64,14 +65,62 @@ With *Reduce Motion* on in macOS, all of this becomes plain fades.
 
 ## Settings
 
+Process network rankings measure the TCP/UDP socket activity macOS reports,
+including local and proxy connections. Collection starts when a network ranking
+is selected with Processes enabled and the panel visible; the initial list shows
+**Reading data…** while the first traffic samples arrive. Switching to CPU or
+memory keeps collection running for 20 seconds, so returning to either network
+ranking can reuse it. Switching between CPU and memory does not extend that
+deadline. Hiding or fully covering the panel, or disabling Processes, stops the
+reader immediately.
+
+With a system proxy or tunnel, both the original app and the proxy can have activity: the sum is
+not physical-interface throughput and ftop does not invent a mapping between
+them. Other dedicated userland protocols may be unavailable. Errors, expired
+readings and missing usage values remain unavailable rather than showing loading
+or zero.
+Use `ftop doctor --network` to check the native reader, or
+`ftop probe --network --json` for a bounded diagnostic from the same source.
+
 Right-click the panel or the menu bar number. One block holds everything: what to
 show, how the panel behaves, the colors, and under **More** the few settings that have
 a value.
 
+Under **More → Wi-Fi DNS rules**, hover the row to see the current system DNS
+addresses and their source. Click it to open the rule window directly. The tooltip
+is read-only; `ftop dns --json` prints the same system snapshot without opening
+the panel. ftop no longer includes a separate editor for the current network
+service—use macOS Network settings for one-off manual changes.
+
+Use **Wi-Fi DNS rules** to associate an exact Wi-Fi name with automatic or
+custom DNS. A separate default rule cannot be removed: exact names win, and every
+other identifiable Wi-Fi uses the default. Saving validates every address, stores the rules, requests the native
+permissions needed for future changes, and applies the matching rule to the
+currently connected Wi-Fi. Later changes are triggered by Wi-Fi link/name events
+and wake, not by a polling loop. Ethernet, disconnected Wi-Fi and unreadable names
+are left unchanged. For two custom addresses, put the preferred DNS first and the
+alternate second; macOS can still choose any available resolver, so this is not a
+guarantee of strict primary/backup failover. Location access is used only to read the
+current Wi-Fi name; ftop still edits only the current physical service's
+`ServerAddresses` through the same guarded native transaction. External DNS changes
+or an uncertain write block another automatic attempt on that connection rather
+than being overwritten repeatedly.
+ftop does not inspect proxy clients or change their files or control interfaces.
+Proxy apps may keep their own resolver state; ftop does not force or verify
+their refresh.
+
+The floating panel also shows a DNS badge and the current system-default
+addresses after the machine readings and before processes. Long addresses are
+shortened, with remaining addresses counted; hover shows full addresses and the
+source. The smallest layout keeps only the badge. Geometry stays fixed as DNS
+changes. The DNS module switch hides it. Reads follow network changes and do
+not modify network settings.
+
 <p align="center"><img src="docs/media/settings.png" width="620" alt="The settings: a block of round switches, and the same block with More open"></p>
 
-The same settings are a plain text file, `~/.config/ftop/config.json5` (JSON with
-comments). The two stay in step, and a saved change applies at once.
+The monitor settings also live in `~/.config/ftop/config.json5` (JSON with
+comments). The file and control block stay in step, and a saved change applies
+at once. DNS changes are stored in macOS network settings instead.
 
 ## Cost
 
@@ -84,6 +133,21 @@ Measured with `scripts/perf.sh` on a 14-core Apple Silicon Mac, updating once a 
 | Hidden or fully covered | 0.0–0.1% | same range |
 
 With system processes granted (below), the helper that lists them adds about 0.5%.
+
+The local DNS-row build measured 1.1–1.8% of one core and 41 MB across five
+samples in a regular 300×420 window on this Mac, above the under-1% reference CPU
+target. No same-session baseline with DNS hidden was measured, so the difference
+cannot be attributed to DNS. See the [validation record](docs/evidence/2026-10-19-floating-dns/README.md).
+
+
+The 2026-10-20 process-network build was measured separately in a regular
+332×505 panel, including its helper: CPU ranking **0.3–0.7%**, download and upload
+rankings **1.0–1.5%** of one core at 1 s refresh, with about **39–40 MiB** `top MEM`
+in network mode. The under-1% CPU target is not met. At 0.5 s, short peaks reached
+**12.8%** even without added traffic; the connection-churn control reached 12.2%.
+These short sequential samples do not isolate the cause or prove a worst-case
+bound. Hidden-state cost was not reliably verified in this run. See the
+[network validation record](docs/evidence/2026-10-19-process-network/README.md).
 
 ## Install
 

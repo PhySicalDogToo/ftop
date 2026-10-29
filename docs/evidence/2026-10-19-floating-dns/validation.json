@@ -1,0 +1,21 @@
+{
+  "fullTestCount": 214,
+  "fullTestPasses": 2,
+  "livePreviewInitialDNSReadVerified": true,
+  "longIPv6TestedWithFixtures": true,
+  "nativeDNSEventMutationTestPerformed": false,
+  "nativeNetworkSettingChangesPerformed": false,
+  "nativeResizeFormsChecked": [
+    "regular",
+    "large-single-column",
+    "wide-columns",
+    "tall-narrow",
+    "wide-thin",
+    "micro-badges"
+  ],
+  "ownedPreviewStopped": true,
+  "referencePNGCount": 99,
+  "renderAndDNSTestCount": 19,
+  "targetedLayoutAndDNSTestCount": 30,
+  "temporaryPreviewRemoved": true
+}

@@ -137,7 +137,7 @@ final class ProcessRowsView: NSView {
 
     func update(_ new: ProcessRowsItem?, style newStyle: PanelStyle) {
         let old = item
-        let restyled = newStyle.scale != style.scale || newStyle.palette != style.palette
+        let restyled = newStyle.scale != style.scale || newStyle.palette != style.palette || old?.paint != new?.paint
         item = new
         style = newStyle
         guard let new else {
@@ -271,11 +271,9 @@ final class ProcessRowsView: NSView {
     private func draw(_ row: ProcessRow, in entry: Row, size: CGSize, scale: CGFloat, paint: Paint, restyled: Bool, animated: Bool) {
         let badge = CGRect(x: 0, y: (size.height - style.badge) / 2, width: style.badge, height: style.badge)
         let baseline = size.height / 2 + ceil(Typesetter.metrics(style.body).capHeight) / 2
-        // The figure has the room of the widest one, so the name never moves and is drawn once.
-        // Memory sets it ("88.8" G): a share of the machine is at most "100".
-        let unitGap = style.points(2)
-        let room = ceil(
-            Typesetter.line("88.8", style.bodyStrong).width + unitGap + max(Typesetter.line("%", style.caption).width, Typesetter.line("M", style.caption).width))
+        // Every ranking reserves the same bounded rate width; names never move with readings.
+        let unitGap = style.processUnitGap
+        let room = style.processFigureRoom
         let stale = restyled || entry.width != size.width || entry.content.contents == nil
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -327,7 +325,11 @@ final class ProcessRowsView: NSView {
         }
         entry.width = size.width
         let share = CGFloat(min(1, max(0, row.share)))
-        if animated, entry.drawn != nil { Follow.add(to: entry.arc, "strokeEnd", from: entry.arc.strokeEnd, to: share, least: 0.004, interval: style.interval) }
+        if paint == .secondary {
+            entry.arc.removeAllAnimations()
+        } else if animated, entry.drawn != nil {
+            Follow.add(to: entry.arc, "strokeEnd", from: entry.arc.strokeEnd, to: share, least: 0.004, interval: style.interval)
+        }
         entry.arc.strokeEnd = share
         entry.drawn = row
         CATransaction.commit()
@@ -401,7 +403,7 @@ final class ProcessRowsView: NSView {
     }
 }
 
-/// The card a click on a process row brings up: the app, its two figures, and the
+/// The card a click on a process row brings up: the app, its current readings, and the
 /// processes folded into it. A window of its own, so the panel keeps its size and
 /// nothing in it moves.
 @MainActor
@@ -509,9 +511,8 @@ private final class CardFace: NSView {
 
     override var isFlipped: Bool { true }
 
-    private var pad: CGFloat { 14 }
-    private var icon: CGFloat { 30 }
-    private var rowPitch: CGFloat { 19 }
+    private var pad: CGFloat { PanelStyle.processCardPadding }
+    private var icon: CGFloat { PanelStyle.processCardIcon }
     /// The card is drawn at the panel's base sizes whatever the panel's scale: it is read up close.
     private var base: PanelStyle { PanelStyle(scale: 1, palette: style.palette, motion: style.motion, interval: style.interval) }
 
@@ -523,20 +524,14 @@ private final class CardFace: NSView {
     }
 
     var fittingCardSize: NSSize {
-        guard let card else { return .zero }
-        let style = base
-        let title = Typesetter.width(card.name, style.bodyStrong)
-        let figures = (style.badge + style.badgeGap) * 2 + Typesetter.width("100 %", style.bodyStrong) + Typesetter.width("888.8 GB", style.bodyStrong) + 18
-        let members = card.members.map { Typesetter.width($0.name, style.caption) + 70 }.max() ?? 0
-        let width = min(280, max(190, pad * 2 + max(icon + 10 + title, figures, members)))
-        let height = pad * 2 + icon + 12 + style.badge + (card.members.isEmpty ? 0 : 12 + CGFloat(card.members.count) * rowPitch - 6)
-        return NSSize(width: ceil(width), height: ceil(height))
+        card.map { ProcessCardLayout($0).size } ?? .zero
     }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let card, let context = NSGraphicsContext.current?.cgContext else { return }
         let style = base
         let bounds = self.bounds
+        let layout = ProcessCardLayout(card)
         let shape = CGPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 14, cornerHeight: 14, transform: nil)
         context.addPath(shape)
         context.setFillColor(PanelStyle.cardColor.cgColor)
@@ -568,47 +563,120 @@ private final class CardFace: NSView {
             context.fillEllipse(in: iconBox)
             GlyphArt.draw(.process, in: iconBox.insetBy(dx: 8, dy: 8), color: style.color(.secondary).cgColor, context: context)
         }
-        let room = bounds.width - pad - iconBox.maxX - 10
+        let room = bounds.width - pad - iconBox.maxX - PanelStyle.processCardTitleGap
         _ = text(
-            Typesetter.truncated(card.name, style.bodyStrong, to: room), style.bodyStrong, .ink, x: iconBox.maxX + 10, baseline: iconBox.midY + cap(style.bodyStrong) / 2)
+            Typesetter.truncated(card.name, style.bodyStrong, to: room), style.bodyStrong, .ink, x: iconBox.maxX + PanelStyle.processCardTitleGap,
+            baseline: iconBox.midY + cap(style.bodyStrong) / 2)
 
-        // The same two badges as in the panel: processor, then memory.
-        let middle = iconBox.maxY + 12 + style.badge / 2
-        var x = pad
-        // The processor's figure keeps the room of its widest value, so the memory badge does not move with it.
-        for (glyph, paint, value, unit, share, widest) in [
-            (Glyph.cpu, Paint.performance, card.cpu, "%", card.cpuShare, "100"),
-            (.memory, PanelStyle.pressurePaint(.normal), card.memory, card.memoryUnit + "B", card.memoryShare, ""),
-        ] {
-            let badge = CGRect(x: x, y: middle - style.badge / 2, width: style.badge, height: style.badge)
+        // One pair per row. Network rates have no share arc: their collector's scope
+        // can include local or proxy traffic and is not the physical interface total.
+        let figures: [(Glyph, Paint, String, String, Double?)] = [
+            (.cpu, .performance, card.cpu, card.cpu == "—" ? "" : "%", card.cpu == "—" ? nil : card.cpuShare),
+            (.memory, PanelStyle.pressurePaint(.normal), card.memory, card.memoryUnit.isEmpty ? "" : card.memoryUnit + "B", card.memory == "—" ? nil : card.memoryShare),
+            (.download, .secondary, card.download, card.downloadUnit, nil),
+            (.upload, .secondary, card.upload, card.uploadUnit, nil),
+        ]
+        for (index, figure) in figures.enumerated() {
+            let (glyph, paint, value, unit, share) = figure
+            let frame = layout.metricFrames[index]
+            let badge = CGRect(x: frame.minX, y: frame.minY, width: style.badge, height: style.badge)
             context.setFillColor(style.color(.badge).cgColor)
             context.fillEllipse(in: badge)
             let side = style.badgeGlyph
             GlyphArt.draw(
                 glyph, in: CGRect(x: badge.midX - side / 2, y: badge.midY - side / 2, width: side, height: side), color: style.color(paint).cgColor, context: context)
-            let line = style.badgeRing
-            let arc = CGMutablePath()
-            let turn = CGFloat(min(1, max(0, share))) * 2 * .pi
-            arc.addArc(center: CGPoint(x: badge.midX, y: badge.midY), radius: (badge.width - line) / 2, startAngle: -.pi / 2, endAngle: -.pi / 2 + turn, clockwise: false)
-            context.addPath(arc)
-            context.setStrokeColor(style.color(paint).cgColor)
-            context.setLineWidth(line)
-            context.setLineCap(.round)
-            context.strokePath()
-            let baseline = middle + cap(style.bodyStrong) / 2
+            if let share {
+                let line = style.badgeRing
+                let arc = CGMutablePath()
+                let turn = CGFloat(min(1, max(0, share))) * 2 * .pi
+                arc.addArc(
+                    center: CGPoint(x: badge.midX, y: badge.midY), radius: (badge.width - line) / 2, startAngle: -.pi / 2, endAngle: -.pi / 2 + turn, clockwise: false)
+                context.addPath(arc)
+                context.setStrokeColor(style.color(paint).cgColor)
+                context.setLineWidth(line)
+                context.setLineCap(.round)
+                context.strokePath()
+            }
+            let baseline = badge.midY + cap(style.bodyStrong) / 2
             let left = badge.maxX + style.badgeGap
-            let width = text(value, style.bodyStrong, .ink, x: left, baseline: baseline)
-            let unitWidth = text(unit, style.caption, .secondary, x: left + width + 3, baseline: baseline)
-            x = left + max(width, Typesetter.width(widest, style.bodyStrong)) + 3 + unitWidth + 18
+            let valueWidth = text(value, style.bodyStrong, .ink, x: left, baseline: baseline)
+            _ = text(unit, style.caption, .secondary, x: left + valueWidth + style.processUnitGap, baseline: baseline)
         }
+        for (index, member) in card.members.enumerated() {
+            let frame = layout.memberFrames[index]
+            let baseline = frame.minY + cap(style.caption)
+            let unitWidth = text(member.unit, style.caption, .secondary, x: frame.maxX, baseline: baseline, trailing: true)
+            let valueWidth = text(member.value, style.captionStrong, .ink, x: frame.maxX - unitWidth - style.processUnitGap, baseline: baseline, trailing: true)
+            let nameRoom = frame.width - unitWidth - valueWidth - PanelStyle.processCardBlockGap
+            _ = text(Typesetter.truncated(member.name, style.caption, to: nameRoom), style.caption, .secondary, x: frame.minX, baseline: baseline)
+        }
+        for (index, line) in layout.noteLines.enumerated() {
+            let frame = layout.noteFrames[index]
+            _ = text(line, style.caption, .secondary, x: frame.minX, baseline: frame.minY + cap(style.caption))
+        }
+    }
+}
 
-        var baseline = middle + style.badge / 2 + 12 + cap(style.caption)
-        for member in card.members {
-            let unitWidth = text(member.unit, style.caption, .secondary, x: bounds.width - pad, baseline: baseline, trailing: true)
-            let valueWidth = text(member.value, style.captionStrong, .ink, x: bounds.width - pad - unitWidth - 2, baseline: baseline, trailing: true)
-            let nameRoom = bounds.width - pad * 2 - unitWidth - valueWidth - 12
-            _ = text(Typesetter.truncated(member.name, style.caption, to: nameRoom), style.caption, .secondary, x: pad, baseline: baseline)
-            baseline += rowPitch
+/// Plain geometry shared by the native card and its fitting checks.
+@MainActor
+struct ProcessCardLayout {
+    var size: CGSize
+    var metricFrames: [CGRect]
+    var memberFrames: [CGRect]
+    var noteFrames: [CGRect]
+    var noteLines: [String]
+
+    init(_ card: ProcessCard) {
+        let style = PanelStyle(scale: 1)
+        let pad = PanelStyle.processCardPadding
+        let gap = PanelStyle.processCardBlockGap
+        let columnGap = PanelStyle.processCardColumnGap
+        let metricWidth = style.badge + style.badgeGap + style.processFigureRoom
+        let titleWidth = PanelStyle.processCardIcon + PanelStyle.processCardTitleGap + Typesetter.width(card.name, style.bodyStrong)
+        let membersWidth = card.members.map { Typesetter.width($0.name, style.caption) + PanelStyle.processCardMemberFigureRoom }.max() ?? 0
+        let width = ceil(
+            min(PanelStyle.processCardMaximumWidth, max(PanelStyle.processCardMinimumWidth, pad * 2 + max(titleWidth, metricWidth * 2 + columnGap, membersWidth))))
+        let cellWidth = (width - pad * 2 - columnGap) / 2
+        let top = pad + PanelStyle.processCardIcon + gap
+        metricFrames = (0..<4).map { index in
+            CGRect(x: pad + CGFloat(index % 2) * (cellWidth + columnGap), y: top + CGFloat(index / 2) * (style.badge + gap), width: cellWidth, height: style.badge)
         }
+        var y = top + style.badge * 2 + gap
+        memberFrames = []
+        if !card.members.isEmpty {
+            y += gap
+            for _ in card.members {
+                memberFrames.append(CGRect(x: pad, y: y, width: width - pad * 2, height: PanelStyle.processCardRowPitch))
+                y += PanelStyle.processCardRowPitch
+            }
+        }
+        noteLines = Self.wrapped(card.networkNote ?? "", width: width - pad * 2, font: style.caption)
+        noteFrames = []
+        if !noteLines.isEmpty {
+            y += gap
+            for _ in noteLines {
+                noteFrames.append(CGRect(x: pad, y: y, width: width - pad * 2, height: PanelStyle.processCardNotePitch))
+                y += PanelStyle.processCardNotePitch
+            }
+        }
+        size = CGSize(width: width, height: ceil(y + pad))
+    }
+
+    private static func wrapped(_ text: String, width: CGFloat, font: FontSpec) -> [String] {
+        guard !text.isEmpty else { return [] }
+        let source = String(text.prefix(2048)) as NSString
+        let attributed = NSAttributedString(string: source as String, attributes: [.font: Typesetter.nsFont(font)])
+        let typesetter = CTTypesetterCreateWithAttributedString(attributed)
+        var offset = 0
+        var lines: [String] = []
+        while offset < source.length, lines.count < PanelStyle.processCardNoteMaximumLines {
+            let count = max(1, CTTypesetterSuggestLineBreak(typesetter, offset, Double(width)))
+            lines.append(source.substring(with: NSRange(location: offset, length: min(count, source.length - offset))).trimmingCharacters(in: .whitespacesAndNewlines))
+            offset += count
+        }
+        if offset < source.length, let last = lines.popLast() {
+            lines.append(Typesetter.truncated(last + "…", font, to: width))
+        }
+        return lines
     }
 }

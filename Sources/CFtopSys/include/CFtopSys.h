@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 // The only place ftop touches Apple's private IOReport and IOHID event APIs and the
-// undocumented controller (SMC) interface.
+// undocumented controller (SMC) and NetworkStatistics interfaces.
 // Every function reports failure instead of guessing; callers show "unavailable".
 
 typedef struct {
@@ -105,5 +105,31 @@ int ftop_gpu_read_stats(ftop_gpu_stats *out);
 int ftop_smc_gpu_temperature(ftop_temperature *out);
 // Reads one floating-point key such as "PSTR". Returns 0 on success, -1 otherwise.
 int ftop_smc_read_float(const char *key, double *out);
+
+// ---- Per-process socket traffic ----
+// No connection addresses, ports, DNS names, or payloads cross this boundary.
+typedef struct ftop_process_network_sampler ftop_process_network_sampler;
+typedef struct {
+    uint64_t source_id;
+    uint64_t process_unique_id;
+    uint64_t received_bytes;
+    uint64_t sent_bytes;
+    uint64_t initial_received_bytes;
+    uint64_t initial_sent_bytes;
+    double initial_timestamp;
+    int32_t pid;
+    int removed;
+    char name[64];
+} ftop_process_network_counter;
+
+// Own serial queue and two-second read-only queries; NULL means unavailable.
+ftop_process_network_sampler *ftop_process_network_create(void);
+void ftop_process_network_destroy(ftop_process_network_sampler *sampler);
+// Copies a completed query only. Row count, -1 waiting, -2 failed, -3 overflow,
+// or -4 stale. Repeated generation means the same frame; no callback is awaited.
+int ftop_process_network_copy(ftop_process_network_sampler *sampler,
+    ftop_process_network_counter *out, int capacity, uint64_t *generation, double *timestamp);
+double ftop_process_network_clock(void);
+uint64_t ftop_process_unique_id(int32_t pid);
 
 #endif

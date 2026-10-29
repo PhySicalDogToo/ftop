@@ -1,0 +1,71 @@
+{
+  "after": {
+    "active_tun_enabled": true,
+    "configuration_unchanged_during_read": true,
+    "mihomo_confirmed": true,
+    "saved_dns_mode": "redir-host",
+    "saved_tun_enabled": true
+  },
+  "before": {
+    "active_tun_enabled": true,
+    "configuration_unchanged_during_read": true,
+    "mihomo_confirmed": true,
+    "saved_dns_mode": "redir-host",
+    "saved_tun_enabled": true
+  },
+  "experiments": [
+    {
+      "body_bytes": 4194304,
+      "clash_core_concurrent": {
+        "download_bytes_in_observed_deltas": 15450506,
+        "missing_frames": 0,
+        "observed_frames": 18,
+        "peak_download_delta_bytes": 5800720,
+        "upload_bytes_in_observed_deltas": 2399324
+      },
+      "curl_exit": 0,
+      "experiment": "local_tcp_control",
+      "http_status": 200,
+      "local_server": {
+        "download_bytes_in_observed_deltas": 78,
+        "missing_frames": 0,
+        "observed_frames": 18,
+        "peak_download_delta_bytes": 78,
+        "upload_bytes_in_observed_deltas": 4194420
+      },
+      "original_client": {
+        "download_bytes_in_observed_deltas": 4194420,
+        "missing_frames": 2,
+        "observed_frames": 16,
+        "peak_download_delta_bytes": 1882456,
+        "upload_bytes_in_observed_deltas": 78
+      },
+      "transfer_seconds": 15.76734
+    },
+    {
+      "body_bytes": 2097152,
+      "clash_core_concurrent": {
+        "download_bytes_in_observed_deltas": 11991223,
+        "missing_frames": 1,
+        "observed_frames": 16,
+        "peak_download_delta_bytes": 4776872,
+        "upload_bytes_in_observed_deltas": 639451
+      },
+      "curl_exit": 0,
+      "experiment": "public_https_with_existing_tun",
+      "http_status": 200,
+      "local_server": null,
+      "original_client": {
+        "download_bytes_in_observed_deltas": 2105788,
+        "missing_frames": 5,
+        "observed_frames": 12,
+        "peak_download_delta_bytes": 311217,
+        "upload_bytes_in_observed_deltas": 543
+      },
+      "transfer_seconds": 11.033422
+    }
+  ],
+  "interpretation": "Socket/process activity only. Concurrent Clash traffic is not causally deduplicated or divided by physical-interface traffic.",
+  "public_get_body_limit_bytes": 2097152,
+  "runtime_configuration_unchanged": true
+}

@@ -571,10 +571,71 @@ final class ChipWindow: NSPanel {
     private let label = NSTextField(labelWithString: "")
     private var placedAt = NSPoint.zero
     private var placedText = ""
+    private var placedVisibleFrame: NSRect?
     private static let font: NSFont = {
-        let base = NSFont.systemFont(ofSize: 11, weight: .medium)
-        return NSFont(descriptor: base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor, size: 11) ?? base
+        let base = NSFont.systemFont(ofSize: PanelStyle.chipTextSize, weight: .medium)
+        return NSFont(descriptor: base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor, size: PanelStyle.chipTextSize) ?? base
     }()
+
+    struct Presentation {
+        let text: String
+        let frame: NSRect
+        let textFrame: NSRect
+        let omittedLines: Int
+    }
+
+    /// The chip is measured only when its text, pointer anchor or screen changes.
+    /// Wrap at any character so a complete IPv6 address never needs truncation.
+    static func presentation(_ text: String, above point: NSPoint, visibleFrame: NSRect) -> Presentation {
+        let insetX = min(PanelStyle.chipScreenInset, max(0, visibleFrame.width / 2))
+        let insetY = min(PanelStyle.chipScreenInset, max(0, visibleFrame.height / 2))
+        let available = visibleFrame.insetBy(dx: insetX, dy: insetY)
+        let maximumWidth = max(1, min(PanelStyle.chipMaxWidth, available.width))
+        let maximumTextWidth = max(1, maximumWidth - PanelStyle.chipPaddingX * 2)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byCharWrapping
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .paragraphStyle: paragraph]
+
+        func measure(_ value: String) -> (size: NSSize, textSize: NSSize) {
+            let naturalWidth =
+                value.components(separatedBy: "\n").map {
+                    ($0 as NSString).size(withAttributes: attributes).width
+                }.max() ?? 0
+            let textWidth = min(maximumTextWidth, max(1, ceil(naturalWidth)))
+            let bounds = (value as NSString).boundingRect(
+                with: NSSize(width: textWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes)
+            let textHeight = ceil(max(bounds.height, font.ascender - font.descender))
+            let singleLine = !value.contains("\n") && naturalWidth <= textWidth
+            // Preserve the established 20-point chip for ordinary short hovers.
+            let height = singleLine ? PanelStyle.chipMinHeight : max(PanelStyle.chipMinHeight, textHeight + PanelStyle.chipPaddingY * 2)
+            return (NSSize(width: min(maximumWidth, textWidth + PanelStyle.chipPaddingX * 2), height: height), NSSize(width: textWidth, height: textHeight))
+        }
+
+        var shown = text
+        var dimensions = measure(shown)
+        var omitted = 0
+        if dimensions.size.height > available.height {
+            var lines = text.components(separatedBy: "\n")
+            repeat {
+                lines.removeLast()
+                omitted += 1
+                let count = Strings.pick("… \(omitted) more \(omitted == 1 ? "line" : "lines")", "…另有 \(omitted) 行未显示")
+                shown = (lines + [count]).joined(separator: "\n")
+                dimensions = measure(shown)
+            } while !lines.isEmpty && dimensions.size.height > available.height
+        }
+        let size = NSSize(width: dimensions.size.width, height: min(dimensions.size.height, max(1, available.height)))
+        var frame = NSRect(x: point.x - size.width / 2, y: point.y + PanelStyle.chipPointerGap, width: size.width, height: size.height)
+        if frame.maxY > available.maxY { frame.origin.y = point.y - size.height - PanelStyle.chipPointerGap }
+        frame.origin.x = min(max(frame.minX, available.minX), available.maxX - size.width)
+        frame.origin.y = min(max(frame.minY, available.minY), available.maxY - size.height)
+        let textHeight = min(dimensions.textSize.height, size.height)
+        let textFrame = NSRect(
+            x: (size.width - dimensions.textSize.width) / 2, y: (size.height - textHeight) / 2,
+            width: dimensions.textSize.width, height: textHeight)
+        return Presentation(text: shown, frame: frame, textFrame: textFrame, omittedLines: omitted)
+    }
 
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -587,16 +648,15 @@ final class ChipWindow: NSPanel {
         animationBehavior = .none
         let background = NSView()
         background.wantsLayer = true
-        background.layer?.cornerRadius = 6
+        background.layer?.cornerRadius = PanelStyle.chipCornerRadius
         background.layer?.cornerCurve = .continuous
         label.font = Self.font
-        label.translatesAutoresizingMaskIntoConstraints = false
+        label.lineBreakMode = .byCharWrapping
+        label.maximumNumberOfLines = 0
+        label.cell?.wraps = true
+        label.cell?.isScrollable = false
+        label.cell?.usesSingleLineMode = false
         background.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 8),
-            label.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -8),
-            label.centerYAnchor.constraint(equalTo: background.centerYAnchor),
-        ])
         contentView = background
     }
 
@@ -609,21 +669,19 @@ final class ChipWindow: NSPanel {
             }
             label.textColor = PanelStyle.chipTextColor
         }
-        if label.stringValue != text { label.stringValue = text }
         // Moving a window is costly; follow the pointer in steps, not on every event.
-        let moved = abs(point.x - placedAt.x) > 14 || abs(point.y - placedAt.y) > 14
-        guard moved || text != placedText || !isVisible else { return }
-        let size = NSSize(width: ceil(label.intrinsicContentSize.width) + 16, height: 20)
+        let moved = abs(point.x - placedAt.x) > PanelStyle.chipMoveStep || abs(point.y - placedAt.y) > PanelStyle.chipMoveStep
+        guard let visible = (NSScreen.screens.first { $0.frame.contains(point) } ?? parent.screen ?? NSScreen.main)?.visibleFrame else { return }
+        guard moved || text != placedText || visible != placedVisibleFrame || !isVisible else { return }
         let anchor = moved || !isVisible ? point : placedAt
         placedAt = anchor
         placedText = text
-        var frame = NSRect(x: anchor.x - size.width / 2, y: anchor.y + 12, width: size.width, height: size.height)
-        if let visible = (parent.screen ?? NSScreen.main)?.visibleFrame {
-            frame.origin.x = min(max(frame.minX, visible.minX + 4), visible.maxX - size.width - 4)
-            // No room above the pointer: go below it.
-            if frame.maxY > visible.maxY - 2 { frame.origin.y = anchor.y - size.height - 16 }
-        }
-        if frame != self.frame { setFrame(frame, display: true) }
+        placedVisibleFrame = visible
+        let presentation = Self.presentation(text, above: anchor, visibleFrame: visible)
+        if label.stringValue != presentation.text { label.stringValue = presentation.text }
+        label.preferredMaxLayoutWidth = presentation.textFrame.width
+        label.frame = presentation.textFrame
+        if presentation.frame != frame { setFrame(presentation.frame, display: true) }
         if parent.childWindows?.contains(self) != true {
             level = parent.level
             parent.addChildWindow(self, ordered: .above)

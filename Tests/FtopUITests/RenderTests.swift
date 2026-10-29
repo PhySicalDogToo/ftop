@@ -60,6 +60,7 @@ private let demoFrameCount = ProcessInfo.processInfo.environment["FTOP_DEMO_FRAM
                 config.language = .zh
                 model.apply(config)
                 model.ingest(Snapshot.sample(performance: 10, efficiency: 4))
+                model.setDNS(DNSState(servers: ["114.114.114.114", "8.8.8.8"], source: .systemDefault))
                 model.setChoice(model.choice(for: CGSize(width: width, height: height)))
 
                 let frame = NSRect(origin: .zero, size: model.hugSize)
@@ -106,6 +107,7 @@ private let demoFrameCount = ProcessInfo.processInfo.environment["FTOP_DEMO_FRAM
                     config.palette = palette
                     model.apply(config)
                     model.ingest(Snapshot.sample(groups: groups))
+                    model.setDNS(DNSState(servers: ["114.114.114.114"], source: .systemDefault))
                     model.setChoice(model.choice(for: CGSize(width: width, height: height)))
 
                     let frame = NSRect(origin: .zero, size: model.hugSize)
@@ -272,6 +274,7 @@ private let demoFrameCount = ProcessInfo.processInfo.environment["FTOP_DEMO_FRAM
                 let eased = 1 - pow(1 - part, 3)
                 model.ingest(
                     Self.demoSnapshot(step: frame / 15, progress: demoFrameCount > 1 ? eased : 1, period: demoFrameCount > 15 ? demoFrameCount / 15 : nil))
+                model.setDNS(DNSState(servers: ["114.114.114.114", "8.8.8.8"], source: .systemDefault))
                 model.setChoice(model.choice(for: CGSize(width: width, height: height)))
 
                 let frameRect = NSRect(origin: .zero, size: model.hugSize)

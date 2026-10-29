@@ -188,23 +188,78 @@ public struct NetworkSample: Sendable, Codable, Equatable {
     }
 }
 
+/// Current traffic attributed to a process, in bytes per second. Nil at the use
+/// site means no reading; two measured zeroes mean a valid quiet interval.
+public struct ProcessNetworkSample: Sendable, Codable, Equatable {
+    public var downloadBytesPerSecond: Double
+    public var uploadBytesPerSecond: Double
+
+    public init(downloadBytesPerSecond: Double, uploadBytesPerSecond: Double) {
+        self.downloadBytesPerSecond = downloadBytesPerSecond
+        self.uploadBytesPerSecond = uploadBytesPerSecond
+    }
+}
+
+/// Whether the independent process traffic reader supplied a current ranking.
+public enum ProcessNetworkStatus: Sendable, Codable, Equatable {
+    case available
+    /// Collection has started, but a fresh rate needs two completed counter batches.
+    case loading
+    case unavailable(String)
+
+    public static let notCollected = ProcessNetworkStatus.unavailable("per-process network traffic is not being collected")
+
+    public var isAvailable: Bool {
+        if case .available = self { return true }
+        return false
+    }
+
+    public var isLoading: Bool {
+        if case .loading = self { return true }
+        return false
+    }
+
+    public var reason: String? {
+        if case .unavailable(let reason) = self { return reason }
+        return nil
+    }
+}
+
 /// One process folded into an app's entry.
 public struct ProcessMember: Sendable, Codable, Equatable {
     public var name: String
     /// Percent of one core, like `ProcessSample.cpuPercent`.
     public var cpuPercent: Double
     public var memoryBytes: UInt64
+    public var network: ProcessNetworkSample?
+    /// False for a network-only process whose CPU and memory were not read.
+    public var usageAvailable: Bool
 
-    public init(name: String, cpuPercent: Double, memoryBytes: UInt64) {
+    public init(name: String, cpuPercent: Double, memoryBytes: UInt64, network: ProcessNetworkSample? = nil, usageAvailable: Bool = true) {
         self.name = name
         self.cpuPercent = cpuPercent
         self.memoryBytes = memoryBytes
+        self.network = network
+        self.usageAvailable = usageAvailable
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, cpuPercent, memoryBytes, network, usageAvailable }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        cpuPercent = try values.decode(Double.self, forKey: .cpuPercent)
+        memoryBytes = try values.decode(UInt64.self, forKey: .memoryBytes)
+        network = try values.decodeIfPresent(ProcessNetworkSample.self, forKey: .network)
+        usageAvailable = try values.decodeIfPresent(Bool.self, forKey: .usageAvailable) ?? true
     }
 }
 
 /// What a process list is ranked by.
 public enum ProcessSort: String, Sendable, Codable, CaseIterable {
-    case cpu, memory
+    case cpu, memory, download, upload
+
+    public var isNetwork: Bool { self == .download || self == .upload }
 }
 
 /// A row of the process list: one process, or an app with its helper processes folded in.
@@ -219,17 +274,39 @@ public struct ProcessSample: Sendable, Codable, Equatable, Identifiable {
     public var appPath: String?
     /// The processes folded into this entry, heaviest first; empty for a single process.
     public var members: [ProcessMember]
+    public var network: ProcessNetworkSample?
+    /// False when only traffic was read. CPU and memory placeholders must not be shown.
+    public var usageAvailable: Bool
 
     /// Stable while the entry stays in the list: the app, or the process.
     public var id: String { appPath ?? "pid \(pid)" }
 
-    public init(pid: Int32, name: String, cpuPercent: Double, memoryBytes: UInt64, appPath: String? = nil, members: [ProcessMember] = []) {
+    public init(
+        pid: Int32, name: String, cpuPercent: Double, memoryBytes: UInt64, appPath: String? = nil, members: [ProcessMember] = [],
+        network: ProcessNetworkSample? = nil, usageAvailable: Bool = true
+    ) {
         self.pid = pid
         self.name = name
         self.cpuPercent = cpuPercent
         self.memoryBytes = memoryBytes
         self.appPath = appPath
         self.members = members
+        self.network = network
+        self.usageAvailable = usageAvailable
+    }
+
+    private enum CodingKeys: String, CodingKey { case pid, name, cpuPercent, memoryBytes, appPath, members, network, usageAvailable }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        pid = try values.decode(Int32.self, forKey: .pid)
+        name = try values.decode(String.self, forKey: .name)
+        cpuPercent = try values.decode(Double.self, forKey: .cpuPercent)
+        memoryBytes = try values.decode(UInt64.self, forKey: .memoryBytes)
+        appPath = try values.decodeIfPresent(String.self, forKey: .appPath)
+        members = try values.decodeIfPresent([ProcessMember].self, forKey: .members) ?? []
+        network = try values.decodeIfPresent(ProcessNetworkSample.self, forKey: .network)
+        usageAvailable = try values.decodeIfPresent(Bool.self, forKey: .usageAvailable) ?? true
     }
 
     /// The app bundle a process at `path` belongs to: a helper inside Chrome's bundle belongs to Chrome.
@@ -239,7 +316,8 @@ public struct ProcessSample: Sendable, Codable, Equatable, Identifiable {
     }
 
     /// `list` with every app's processes folded into one entry that carries their sums
-    /// and the app's name, ranked by `sort`. Only what is in `list` is summed.
+    /// and the app's name, ranked by `sort`. Only what is in `list` is summed;
+    /// pass the complete traffic candidates before taking a prefix for a network list.
     public static func folded(_ list: [ProcessSample], by sort: ProcessSort) -> [ProcessSample] {
         var order: [String] = []
         var groups: [String: [ProcessSample]] = [:]
@@ -247,19 +325,42 @@ public struct ProcessSample: Sendable, Codable, Equatable, Identifiable {
             if groups[sample.id] == nil { order.append(sample.id) }
             groups[sample.id, default: []].append(sample)
         }
-        func heavier(_ first: (Double, UInt64), _ second: (Double, UInt64)) -> Bool {
-            sort == .cpu ? (first.0 != second.0 ? first.0 > second.0 : first.1 > second.1) : first.1 > second.1
+        func heavier(_ first: ProcessSample, _ second: ProcessSample) -> Bool {
+            switch sort {
+            case .cpu, .memory:
+                if first.usageAvailable != second.usageAvailable { return first.usageAvailable }
+                guard first.usageAvailable else { return false }
+                if sort == .cpu, first.cpuPercent != second.cpuPercent { return first.cpuPercent > second.cpuPercent }
+                return first.memoryBytes > second.memoryBytes
+            case .download, .upload:
+                let a = sort == .download ? first.network?.downloadBytesPerSecond : first.network?.uploadBytesPerSecond
+                let b = sort == .download ? second.network?.downloadBytesPerSecond : second.network?.uploadBytesPerSecond
+                switch (a, b) {
+                case (.some(let a), .some(let b)): return a > b
+                case (.some, .none): return true
+                default: return false
+                }
+            }
         }
         let entries = order.map { key -> ProcessSample in
-            let group = groups[key]!.sorted { heavier(($0.cpuPercent, $0.memoryBytes), ($1.cpuPercent, $1.memoryBytes)) }
+            let group = groups[key]!.sorted(by: heavier)
             guard let path = group[0].appPath, group.count > 1 || group[0].members.isEmpty else { return group[0] }
             let name = String(path.split(separator: "/").last ?? "").replacingOccurrences(of: ".app", with: "")
+            let network: ProcessNetworkSample? =
+                group.allSatisfy { $0.network != nil }
+                ? ProcessNetworkSample(
+                    downloadBytesPerSecond: group.reduce(0) { $0 + $1.network!.downloadBytesPerSecond },
+                    uploadBytesPerSecond: group.reduce(0) { $0 + $1.network!.uploadBytesPerSecond }) : nil
             return ProcessSample(
                 pid: group[0].pid, name: name.isEmpty ? group[0].name : name, cpuPercent: group.reduce(0) { $0 + $1.cpuPercent },
                 memoryBytes: group.reduce(0) { $0 + $1.memoryBytes }, appPath: path,
-                members: group.count > 1 ? group.map { ProcessMember(name: $0.name, cpuPercent: $0.cpuPercent, memoryBytes: $0.memoryBytes) } : [])
+                members: group.count > 1
+                    ? group.map {
+                        ProcessMember(name: $0.name, cpuPercent: $0.cpuPercent, memoryBytes: $0.memoryBytes, network: $0.network, usageAvailable: $0.usageAvailable)
+                    } : [],
+                network: network, usageAvailable: group.allSatisfy(\.usageAvailable))
         }
-        return entries.sorted { heavier(($0.cpuPercent, $0.memoryBytes), ($1.cpuPercent, $1.memoryBytes)) }
+        return entries.sorted(by: heavier)
     }
 }
 
@@ -268,17 +369,56 @@ public struct ProcessList: Sendable, Codable, Equatable {
     public var top: [ProcessSample]
     /// Sorted by memory, highest first. Empty when the helper cannot provide it.
     public var byMemory: [ProcessSample]
-    /// False when processes owned by other users could not be read.
+    /// Independent complete traffic candidates, folded before truncation.
+    public var byDownload: [ProcessSample]
+    public var byUpload: [ProcessSample]
+    /// An available empty list is a valid sample, unlike an unavailable reader.
+    public var networkStatus: ProcessNetworkStatus
+    /// Attribution or coverage information, such as traffic owned by a VPN core.
+    public var networkNote: String?
+    /// False when the CPU/memory reader could not read processes owned by other
+    /// users. Independent traffic coverage is described by `networkNote`.
     public var coversAllUsers: Bool
     /// True when the installed privileged helper predates this version: it costs more
     /// CPU or lacks the memory ranking; `sudo ftop grant` replaces it.
     public var helperOutdated: Bool
 
-    public init(top: [ProcessSample], byMemory: [ProcessSample] = [], coversAllUsers: Bool, helperOutdated: Bool = false) {
+    public init(
+        top: [ProcessSample], byMemory: [ProcessSample] = [], coversAllUsers: Bool, helperOutdated: Bool = false,
+        byDownload: [ProcessSample] = [], byUpload: [ProcessSample] = [], networkStatus: ProcessNetworkStatus = .notCollected, networkNote: String? = nil
+    ) {
         self.top = top
         self.byMemory = byMemory
         self.coversAllUsers = coversAllUsers
         self.helperOutdated = helperOutdated
+        self.byDownload = byDownload
+        self.byUpload = byUpload
+        self.networkStatus = networkStatus
+        self.networkNote = networkNote
+    }
+
+    private enum CodingKeys: String, CodingKey { case top, byMemory, coversAllUsers, helperOutdated, byDownload, byUpload, networkStatus, networkNote }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        top = try values.decode([ProcessSample].self, forKey: .top)
+        byMemory = try values.decodeIfPresent([ProcessSample].self, forKey: .byMemory) ?? []
+        coversAllUsers = try values.decode(Bool.self, forKey: .coversAllUsers)
+        helperOutdated = try values.decodeIfPresent(Bool.self, forKey: .helperOutdated) ?? false
+        byDownload = try values.decodeIfPresent([ProcessSample].self, forKey: .byDownload) ?? []
+        byUpload = try values.decodeIfPresent([ProcessSample].self, forKey: .byUpload) ?? []
+        networkStatus = try values.decodeIfPresent(ProcessNetworkStatus.self, forKey: .networkStatus) ?? .notCollected
+        networkNote = try values.decodeIfPresent(String.self, forKey: .networkNote)
+    }
+
+    /// Returns exactly the requested ranking, with no fallback to a different measure.
+    public func entries(sortedBy sort: ProcessSort) -> [ProcessSample] {
+        switch sort {
+        case .cpu: top
+        case .memory: byMemory
+        case .download: networkStatus.isAvailable ? byDownload : []
+        case .upload: networkStatus.isAvailable ? byUpload : []
+        }
     }
 
     /// This list with every `cpuPercent` as a share of the whole machine (0...100), the
@@ -290,13 +430,19 @@ public struct ProcessList: Sendable, Codable, Equatable {
             samples.map { sample in
                 var copy = sample
                 copy.cpuPercent = share(sample.cpuPercent)
-                copy.members = sample.members.map { ProcessMember(name: $0.name, cpuPercent: share($0.cpuPercent), memoryBytes: $0.memoryBytes) }
+                copy.members = sample.members.map { member in
+                    var member = member
+                    member.cpuPercent = share(member.cpuPercent)
+                    return member
+                }
                 return copy
             }
         }
         var list = self
         list.top = converted(top)
         list.byMemory = converted(byMemory)
+        list.byDownload = converted(byDownload)
+        list.byUpload = converted(byUpload)
         return list
     }
 }

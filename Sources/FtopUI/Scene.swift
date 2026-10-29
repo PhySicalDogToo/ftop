@@ -67,6 +67,12 @@ public struct ProcessCard: Hashable, Sendable {
     public var memoryShare: Double
     /// The heaviest processes folded into the entry, with the figure the list is ranked by.
     public var members: [Member]
+    public var download: String = "—"
+    public var downloadUnit: String = ""
+    public var upload: String = "—"
+    public var uploadUnit: String = ""
+    /// The process collector's scope and proxy attribution, independent of physical interface totals.
+    public var networkNote: String? = nil
 
     public struct Member: Hashable, Sendable {
         public var name: String

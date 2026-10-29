@@ -8,6 +8,7 @@ public final class PanelModel {
     public let canvas = PanelCanvasView()
     public private(set) var config = Config()
     public private(set) var snapshot: Snapshot?
+    public private(set) var dns = DNSState()
     public private(set) var machine = MachineShape()
     public private(set) var choice = PanelModel.firstChoice
     public var motionAllowed = true
@@ -21,8 +22,18 @@ public final class PanelModel {
     /// The process rankings as shown, which change less often than the readings do.
     private var cpuRanking = SteadyRanking.cpu
     private var memoryRanking = SteadyRanking.memory
+    private var downloadRanking = SteadyRanking.download
+    private var uploadRanking = SteadyRanking.upload
 
     public init() {}
+
+    /// DNS arrives on configuration changes, separately from hardware samples.
+    /// Its contents never invalidate the measured layout sizes.
+    public func setDNS(_ state: DNSState) {
+        guard dns != state else { return }
+        dns = state
+        render()
+    }
 
     // MARK: Inputs
 
@@ -30,10 +41,41 @@ public final class PanelModel {
     @discardableResult
     public func apply(_ new: Config) -> Bool {
         let layoutChanged = new.shown != config.shown || new.maxProcesses != config.maxProcesses || new.language != config.language
+        let trafficModuleChanged = new.shown.contains(.processes) != config.shown.contains(.processes)
+        let enteringTraffic = new.processSort.isNetwork && !config.processSort.isNetwork
+        // The sampler owns the grace period and continues delivering current traffic
+        // while another sort is shown. Reuse that state until it reports collection off.
+        let trafficStatus = snapshot?.processes.value?.networkStatus
+        let staleTraffic = trafficStatus?.isAvailable == true && snapshot.map { Date().timeIntervalSince($0.time) > 6 } == true
+        let trafficCollectionChanged = trafficModuleChanged || (enteringTraffic && (trafficStatus == nil || trafficStatus == .notCollected || staleTraffic))
         config = new
         Strings.language = new.language
+        if trafficCollectionChanged {
+            resetProcessNetwork(loading: new.processSort.isNetwork && new.shown.contains(.processes))
+        }
         if layoutChanged { sizes = [:] }
         return layoutChanged
+    }
+
+    /// Immediate source stops (hidden panel, disabled module or expired grace)
+    /// invalidate only traffic, without disturbing the current CPU/memory sample.
+    public func resetProcessNetwork(loading: Bool) {
+        downloadRanking = .download
+        uploadRanking = .upload
+        var latest = snapshot
+        if loading, latest == nil {
+            latest = Snapshot(
+                time: Date(), cpu: .unavailable(Strings.noReading), memory: .unavailable(Strings.noReading), network: .unavailable(Strings.noReading),
+                processes: .unavailable(Strings.noReading), gpu: .unavailable(Strings.noReading), power: .unavailable(Strings.noReading))
+        }
+        guard var snapshot = latest else { return }
+        guard var list = snapshot.processes.value ?? (loading ? ProcessList(top: [], coversAllUsers: false) : nil) else { return }
+        list.byDownload = []
+        list.byUpload = []
+        list.networkNote = nil
+        list.networkStatus = loading ? .loading : .notCollected
+        snapshot.processes = .value(list)
+        self.snapshot = snapshot
     }
 
     /// Returns true when the core counts changed, which changes every layout's size.
@@ -43,7 +85,10 @@ public final class PanelModel {
         if let list = new.processes.value {
             let elapsed = snapshot.map { min(10, max(0, new.time.timeIntervalSince($0.time))) } ?? 0
             // Rows stay where they are while the pointer is on them, so a click lands on the row it was aimed at.
-            new.processes = .value(list.steadied(cpu: &cpuRanking, memory: &memoryRanking, elapsed: elapsed, hold: canvas.pointerOnProcesses))
+            new.processes = .value(
+                list.steadied(
+                    cpu: &cpuRanking, memory: &memoryRanking, download: &downloadRanking, upload: &uploadRanking,
+                    elapsed: elapsed, hold: canvas.pointerOnProcesses))
         }
         snapshot = new
         guard let cpu = new.cpu.value else { return false }
@@ -71,6 +116,7 @@ public final class PanelModel {
     private func builder(scale: Double, live: Bool) -> SceneBuilder {
         var builder = SceneBuilder(snapshot: live ? snapshot : nil, machine: machine, modules: config.shown, style: style(scale: scale))
         builder.processSort = config.processSort
+        builder.dns = live ? dns : DNSState()
         return builder
     }
 

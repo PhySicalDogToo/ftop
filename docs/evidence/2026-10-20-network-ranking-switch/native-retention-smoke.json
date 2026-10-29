@@ -1,0 +1,14 @@
+{
+  "bundled_unprivileged_helper" : true,
+  "cold_initial_state" : "loading",
+  "date" : "2026-10-20",
+  "expired_return_first_state" : "loading",
+  "explicit_stop_state" : "stopped",
+  "extra_network_traffic" : false,
+  "grace_stop_seconds" : 20.050062750000507,
+  "initial_ready_seconds" : 2.5540741250006249,
+  "ordinary_user" : true,
+  "scope" : "Real production SystemSampler and native observer, process module only, no GUI; no process identifiers, names or addresses retained.",
+  "ten_second_refresh_remains_available" : true,
+  "warm_return_first_state" : "available"
+}

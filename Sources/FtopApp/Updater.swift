@@ -24,6 +24,8 @@ final class Updater {
     var mode = UpdateMode.install
     /// Called just before the app quits to restart into the new version.
     var willRelaunch: (() -> Void)?
+    /// A system-settings transaction must finish before an update can restart us.
+    var mayInstall: (() -> Bool)?
 
     private var found: ReleaseInfo?
     private var busy = false
@@ -71,7 +73,7 @@ final class Updater {
             }
             found = release
             state = .available(release.version)
-            if install, Self.canInstall { try await self.install(release) }
+            if install, Self.canInstall, mayInstall?() ?? true { try await self.install(release) }
         } catch {
             fail(error)
         }
@@ -79,7 +81,7 @@ final class Updater {
 
     /// Installs the release the last check found.
     func installFound() {
-        guard let found, !busy, Self.canInstall else { return }
+        guard let found, !busy, Self.canInstall, mayInstall?() ?? true else { return }
         Task {
             busy = true
             defer { busy = false }
@@ -94,6 +96,8 @@ final class Updater {
     }
 
     private func install(_ release: ReleaseInfo) async throws {
+        // Recheck here as installFound schedules a task that may start after Save.
+        guard mayInstall?() ?? true else { return }
         state = .installing(release.version)
         let manager = FileManager.default
         let target = Bundle.main.bundleURL

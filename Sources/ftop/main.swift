@@ -42,9 +42,31 @@ func open() {
     task.waitUntilExit()
 }
 
+/// An explicit network diagnostic waits for its independent interval. Ordinary
+/// probes do not start the extra process-network observer.
+final class NetworkDiagnostic: @unchecked Sendable {
+    private let lock = NSLock()
+    private var latest: Snapshot?
+    let ready = DispatchSemaphore(value: 0)
+
+    func receive(_ snapshot: Snapshot) {
+        lock.withLock { latest = snapshot }
+        if snapshot.processes.value?.networkStatus.isAvailable == true { ready.signal() }
+    }
+
+    var snapshot: Snapshot? { lock.withLock { latest } }
+}
+
 /// Two samples one interval apart, so rates and CPU usage are real.
 func takeSnapshot() -> (Snapshot, SystemSampler) {
     let sampler = SystemSampler()
+    if arguments.contains("--network") {
+        let diagnostic = NetworkDiagnostic()
+        sampler.start(interval: 1, modules: ModuleID.allCases, processNetwork: true) { diagnostic.receive($0) }
+        _ = diagnostic.ready.wait(timeout: .now() + 8)
+        sampler.stop()
+        return (diagnostic.snapshot ?? sampler.sampleNow(), sampler)
+    }
     _ = sampler.sampleNow()
     Thread.sleep(forTimeInterval: 1)
     return (sampler.sampleNow(), sampler)
@@ -112,8 +134,45 @@ func probe(json: Bool) {
         for process in list.top.prefix(5) {
             print("  \(process.name)  \(Format.processShare(percentOfOneCore: process.cpuPercent, cores: cores))%  \(Format.processMemory(process.memoryBytes))")
         }
+        if arguments.contains("--network") {
+            if list.networkStatus.isAvailable {
+                print("Process network (TCP/UDP socket activity, including local and proxy connections)")
+                for process in list.byDownload.prefix(5) {
+                    guard let network = process.network else { continue }
+                    print("  \(process.name)  down \(Format.rate(network.downloadBytesPerSecond).text), up \(Format.rate(network.uploadBytesPerSecond).text)")
+                }
+            } else if list.networkStatus.isLoading {
+                print("Process network: reading data")
+            } else {
+                print("Process network unavailable: \(list.networkStatus.reason ?? "not reported")")
+            }
+        }
     case .unavailable(let reason): print("Processes unavailable: \(reason)")
     }
+}
+
+/// Inspect the same read-only state as the control block, without opening a panel.
+func dns(json: Bool) {
+    let state = DNSReader.read()
+    if json {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        do { print(String(decoding: try encoder.encode(state), as: UTF8.self)) } catch { fail("ftop: could not encode DNS state: \(error.localizedDescription)") }
+        return
+    }
+    switch state.source {
+    case .systemDefault: print("DNS source: system default")
+    case .serviceReference: print("DNS source: service reference (system default unavailable)")
+    case .unavailable: print("DNS unavailable: \(state.unavailableReason ?? "not reported")")
+    }
+    for server in state.servers { print("  \(server)") }
+    for service in state.services {
+        let identity = [service.name, service.interfaceName].compactMap { $0 }.joined(separator: " · ")
+        print("Service: \(identity.isEmpty ? service.id : identity)")
+        print("  manual DNS: \(service.manualServers.isEmpty ? "none reported" : service.manualServers.joined(separator: ", "))")
+        print("  service DNS: \(service.providedServers.isEmpty ? "none reported" : service.providedServers.joined(separator: ", "))")
+    }
+    print("Domain- and interface-specific resolvers may differ. Read-only; no settings changed.")
 }
 
 func doctor() {
@@ -158,6 +217,13 @@ func doctor() {
                 "all users, but the granted helper is from an older version (no list by memory, shorter lists). Run `sudo ftop grant` again to replace it.")
         } else {
             line("processes", list.coversAllUsers, list.coversAllUsers ? "all users" : "your processes only. Run `sudo ftop grant` to include system processes.")
+        }
+        if arguments.contains("--network") {
+            line(
+                "process network", list.networkStatus.isAvailable,
+                list.networkStatus.isLoading
+                    ? "waiting for initial process traffic samples"
+                    : list.networkStatus.reason ?? "native TCP/UDP socket activity; proxy/TUN totals may overlap")
         }
     } else {
         line("processes", false, snapshot.processes.reason ?? "")
@@ -213,6 +279,9 @@ case "size":
     guard arguments.count == 2, arguments[1].split(separator: "x").compactMap({ Double($0) }).count == 2 else { fail("usage: ftop size 300x420") }
     post("size", arguments[1])
 case "probe": probe(json: arguments.contains("--json"))
+case "dns":
+    guard arguments.count == 1 || arguments == ["dns", "--json"] else { fail("usage: ftop dns [--json]") }
+    dns(json: arguments.contains("--json"))
 case "doctor": doctor()
 case "grant": grant()
 case "revoke": revoke()
@@ -237,8 +306,9 @@ case "help", "-h", "--help":
         ftop toggle     show or hide the panel
         ftop quit       close the panel
         ftop size WxH   resize the panel, e.g. `ftop size 300x420`
-        ftop probe      print one reading of every sensor (--json for the same as JSON)
-        ftop doctor     list which readings are available and why not (--states adds the raw CPU and GPU frequency data)
+        ftop probe      print readings (--json for JSON; --network adds a bounded process-network diagnostic)
+        ftop dns        inspect current DNS addresses and their source, read-only (--json for JSON)
+        ftop doctor     list available readings (--states adds CPU/GPU frequency data; --network checks per-process network)
         ftop config     print the path of the settings file
         ftop version    print the installed version
         ftop update     look for a newer version now and install it
