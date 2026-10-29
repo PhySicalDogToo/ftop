@@ -1,261 +1,121 @@
-<p align="center"><img src="docs/media/icon.png" width="112" alt="ftop icon: a snowy owl with its eyes closed"></p>
-<h1 align="center">ftop</h1>
-<p align="center">A small, quiet system monitor for Apple Silicon Macs.<br>One floating glass panel that works at any size.</p>
+<p align="center"><img src="docs/media/icon.png" width="112" alt="ftop snowy owl icon"></p>
+<h1 align="center">ftop · personal enhanced edition</h1>
 <p align="center">
-  <a href="README.zh-CN.md">中文说明</a> ·
-  <a href="https://github.com/Nongfsq/ftop/releases/latest">Download</a> ·
-  <a href="#install">Install</a>
+  A native floating monitor for Apple Silicon Macs,<br>
+  enhanced with per-Wi-Fi DNS switching and per-process network rankings.
 </p>
-<p align="center"><a href="https://trendshift.io/repositories/290349?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-290349" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/290349/daily?language=Swift" alt="Nongfsq%2Fftop | Trendshift" width="250" height="55"/></a></p>
+<p align="center"><a href="README.zh-CN.md">中文说明</a></p>
 
-<p align="center"><img src="docs/media/live.gif" width="760" alt="The panel through a few seconds: the core columns ease to each new reading"></p>
+<p align="center"><img src="docs/media/live.gif" width="760" alt="ftop floating panel"></p>
 
-ftop replaces the terminal monitor you keep open in a spare tab with a native window
-you can leave anywhere on the desktop. It is for the moments when the machine is
-working hard — a local model running, an agent compiling, a long build — and you want
-to see at a glance what the cores, memory, and network are doing, and which app is
-responsible.
+This is my personal fork of ftop. It keeps the quiet, adaptive macOS monitor and
+focuses on two additions I use every day:
 
-It shows the current state only: no history graphs, no disk panels.
+- choose system DNS automatically for each Wi-Fi;
+- rank applications by current download and upload activity.
 
-## One panel, every size
+## Main addition: Wi-Fi DNS rules
 
-Drag any edge. ftop picks the layout that fits and the window settles onto it, so
-nothing is ever clipped and no space is left empty. A small window keeps the
-essentials; a large one shows more, not bigger type.
+ftop can read the current system DNS and apply a verified DNS setting when Wi-Fi
+changes.
 
-![The same panel at six sizes](docs/media/sizes.png)
+- Add exact, case-sensitive rules for individual Wi-Fi names.
+- A separate **Default DNS** rule always exists and cannot be deleted. Exact rules
+  win; every other identifiable Wi-Fi uses the default.
+- Each rule can use **Automatic** (remove manual `ServerAddresses`) or a validated
+  list of custom IPv4/IPv6 addresses.
+- For two custom resolvers, enter the preferred DNS first and the alternate second.
+  macOS may still choose any available resolver, so strict failover is not promised.
+- Changes run only after Save and on Wi-Fi/link/wake events. There is no polling or
+  continuous overwrite loop.
+- Native authorization, service identity checks, conflict detection, commit/apply
+  and read-back verification protect every write.
+- Location permission is used only to read the connected Wi-Fi name. If the name
+  or physical service cannot be verified, DNS is left unchanged.
+- ftop does not inspect or modify Clash, Mihomo, TUN or other proxy configuration.
 
-## What it shows
+<p align="center"><img src="docs/evidence/2026-10-29-default-dns-rule/references/dns-rules-en-dark-active-520.png" width="520" alt="Default and exact Wi-Fi DNS rules"></p>
 
-Every figure is led by the same small round badge, and a badge with an arc is a gauge.
-The color says what it belongs to; there is almost no text to read.
-
-| | |
-| --- | --- |
-| **Cores** | One column per core, one group per kind of core the chip has, fastest first. The fill is usage; the tick is that core's current frequency. |
-| **Memory** | Used and total, compressed, swap, and the system's own pressure level. |
-| **Network** | Current download and upload speed. |
-| **GPU** | A column of its own beside the cores, read the same way: the fill is usage, the tick is its current frequency. Memory in use and its watts sit below. Hover for its temperature. |
-| **Power** | What the whole machine draws, in watts. |
-| **Temperature** | One figure, labeled with the sensor level it really comes from. |
-| **Processes** | The busiest apps with their own icons, helper processes folded into the app they belong to. An app's CPU is a share of the whole machine, the same unit as the total above it, so it never passes 100% (Activity Monitor counts one core as 100%). |
-
-A reading the hardware does not give is shown as unavailable, never as zero.
-
-![A large window](docs/media/large.png)
-
-## How it feels
-
-- **Columns follow the readings.** Each core eases to its new value and arrives as the
-  next reading comes in, so the panel moves continuously instead of jumping once a
-  second.
-- **A list that rests.** A process takes its place the moment it becomes busy and
-  leaves it slowly; two apps trading the lead by a point do not swap. A row that
-  passes its neighbor slides; one that goes further turns over where it stands, so
-  rows never fly across the list.
-- **Press a process.** The row gives under the pointer and a card comes up beside it:
-  CPU, memory, download, upload and the helper processes inside the app. Four native
-  badges switch the large list between these metrics. **More → Process ranking**
-  offers the same choice in smaller windows. Rates use KB/s, MB/s and larger units.
-- **Nearly free when you are not looking.** Hidden or fully covered, ftop stops reading
-  everything except the one reading in the menu bar.
-
-With *Reduce Motion* on in macOS, all of this becomes plain fades.
-
-## Settings
-
-Process network rankings measure the TCP/UDP socket activity macOS reports,
-including local and proxy connections. Collection starts when a network ranking
-is selected with Processes enabled and the panel visible; the initial list shows
-**Reading data…** while the first traffic samples arrive. Switching to CPU or
-memory keeps collection running for 20 seconds, so returning to either network
-ranking can reuse it. Switching between CPU and memory does not extend that
-deadline. Hiding or fully covering the panel, or disabling Processes, stops the
-reader immediately.
-
-With a system proxy or tunnel, both the original app and the proxy can have activity: the sum is
-not physical-interface throughput and ftop does not invent a mapping between
-them. Other dedicated userland protocols may be unavailable. Errors, expired
-readings and missing usage values remain unavailable rather than showing loading
-or zero.
-Use `ftop doctor --network` to check the native reader, or
-`ftop probe --network --json` for a bounded diagnostic from the same source.
-
-Right-click the panel or the menu bar number. One block holds everything: what to
-show, how the panel behaves, the colors, and under **More** the few settings that have
-a value.
-
-Under **More → Wi-Fi DNS rules**, hover the row to see the current system DNS
-addresses and their source. Click it to open the rule window directly. The tooltip
-is read-only; `ftop dns --json` prints the same system snapshot without opening
-the panel. ftop no longer includes a separate editor for the current network
-service—use macOS Network settings for one-off manual changes.
-
-Use **Wi-Fi DNS rules** to associate an exact Wi-Fi name with automatic or
-custom DNS. A separate default rule cannot be removed: exact names win, and every
-other identifiable Wi-Fi uses the default. Saving validates every address, stores the rules, requests the native
-permissions needed for future changes, and applies the matching rule to the
-currently connected Wi-Fi. Later changes are triggered by Wi-Fi link/name events
-and wake, not by a polling loop. Ethernet, disconnected Wi-Fi and unreadable names
-are left unchanged. For two custom addresses, put the preferred DNS first and the
-alternate second; macOS can still choose any available resolver, so this is not a
-guarantee of strict primary/backup failover. Location access is used only to read the
-current Wi-Fi name; ftop still edits only the current physical service's
-`ServerAddresses` through the same guarded native transaction. External DNS changes
-or an uncertain write block another automatic attempt on that connection rather
-than being overwritten repeatedly.
-ftop does not inspect proxy clients or change their files or control interfaces.
-Proxy apps may keep their own resolver state; ftop does not force or verify
-their refresh.
-
-The floating panel also shows a DNS badge and the current system-default
-addresses after the machine readings and before processes. Long addresses are
-shortened, with remaining addresses counted; hover shows full addresses and the
-source. The smallest layout keeps only the badge. Geometry stays fixed as DNS
-changes. The DNS module switch hides it. Reads follow network changes and do
-not modify network settings.
-
-<p align="center"><img src="docs/media/settings.png" width="620" alt="The settings: a block of round switches, and the same block with More open"></p>
-
-The monitor settings also live in `~/.config/ftop/config.json5` (JSON with
-comments). The file and control block stay in step, and a saved change applies
-at once. DNS changes are stored in macOS network settings instead.
-
-## Cost
-
-Measured with `scripts/perf.sh` on a 14-core Apple Silicon Mac, updating once a second:
-
-| State | CPU | Memory |
-| --- | --- | --- |
-| Small and medium panels | under 0.8% of one core | under 30 MB |
-| The largest panel, 32 process rows | about 0.9% | about 52 MB |
-| Hidden or fully covered | 0.0–0.1% | same range |
-
-With system processes granted (below), the helper that lists them adds about 0.5%.
-
-The local DNS-row build measured 1.1–1.8% of one core and 41 MB across five
-samples in a regular 300×420 window on this Mac, above the under-1% reference CPU
-target. No same-session baseline with DNS hidden was measured, so the difference
-cannot be attributed to DNS. See the [validation record](docs/evidence/2026-10-19-floating-dns/README.md).
-
-
-The 2026-10-20 process-network build was measured separately in a regular
-332×505 panel, including its helper: CPU ranking **0.3–0.7%**, download and upload
-rankings **1.0–1.5%** of one core at 1 s refresh, with about **39–40 MiB** `top MEM`
-in network mode. The under-1% CPU target is not met. At 0.5 s, short peaks reached
-**12.8%** even without added traffic; the connection-churn control reached 12.2%.
-These short sequential samples do not isolate the cause or prove a worst-case
-bound. Hidden-state cost was not reliably verified in this run. See the
-[network validation record](docs/evidence/2026-10-19-process-network/README.md).
-
-## Install
-
-Requirements: an Apple Silicon Mac with macOS 15 or later.
-
-**From a release.** Download `Ftop-<version>-arm64.zip` from the
-[releases page](https://github.com/Nongfsq/ftop/releases/latest), unpack it, and move
-`Ftop.app` to `~/Applications`. Then link the command into a directory on your `PATH`:
+The panel also shows the current DNS and source. Hover **More → Wi-Fi DNS rules**
+for the full read-only snapshot, or run:
 
 ```bash
-mkdir -p ~/.local/bin && ln -sfn ~/Applications/Ftop.app/Contents/MacOS/ftop ~/.local/bin/ftop
+ftop dns --json
 ```
 
-From 0.2.6 the app is signed with a Developer ID and notarized by Apple, so it opens
-like any downloaded app.
+## Process network rankings
 
-**From source.** Needs Xcode (built and tested with Xcode 27).
+The process list can rank apps by CPU, memory, download or upload. Network rows use
+the native TCP/UDP socket activity reported by macOS and show **Reading data…** until
+the first samples arrive. Switching away keeps collection alive for 20 seconds so a
+quick return can reuse it; hiding the panel or disabling Processes stops it.
+
+Proxy and TUN traffic may appear under both the original app and the proxy. These
+rankings are application activity, not physical-interface totals.
+
+## Monitor
+
+The floating panel still adapts from a tiny strip to a detailed process view without
+clipping or empty space. It shows current state only:
+
+- per-core usage and frequency;
+- memory, compression, swap and pressure;
+- total network download/upload;
+- GPU usage, frequency, memory and power;
+- system power and available temperature sensors;
+- grouped application processes with native icons;
+- current system DNS.
+
+Unavailable hardware readings remain unavailable instead of being displayed as zero.
+
+![ftop at several sizes](docs/media/sizes.png)
+
+## Build and install
+
+Requirements: Apple Silicon and macOS 15 or later, with Xcode command-line tools.
+This personal repository currently documents source builds rather than publishing
+an official release package.
 
 ```bash
-git clone https://github.com/Nongfsq/ftop.git
+git clone git@github.com:PhySicalDogToo/ftop.git
+cd ftop
+scripts/check.sh
+scripts/bundle.sh
+scripts/install.sh
 ```
 
-```bash
-cd ftop && scripts/bundle.sh && scripts/install.sh
-```
-
-This puts `Ftop.app` in `~/Applications` and links `ftop` into `~/.local/bin`.
-
-> **On 0.1.0?** That version cannot update itself. Install the latest release by hand
-> once, as above; from 0.1.1 on ftop keeps itself up to date.
+This installs `Ftop.app` into `~/Applications` and links the `ftop` command into
+`~/.local/bin`.
 
 ## Use
 
 ```bash
-ftop            # open the panel
-ftop toggle     # hide or show it
-ftop quit       # close it
-ftop doctor     # which readings are available on this Mac, and why not
+ftop                    # open the panel
+ftop toggle             # hide or show it
+ftop quit               # close it
+ftop doctor             # inspect sensor availability
+ftop doctor --network   # inspect process-network collection
 ```
 
-- Drag the panel to move it; drag an edge to resize it.
-- Move the pointer to the top edge for two buttons: pin (keep on top) and hide.
-- The menu bar shows one reading, a glyph and its number: CPU by default, or memory,
-  GPU, download, upload, or power (under **More** in the settings). Click it to show
-  or hide the panel.
-- Hover over a core, the memory bar, or the GPU for detail; click a process for its card.
-- Right-click for the settings.
+- Drag an edge to change layout; right-click for settings.
+- Use **More → Process ranking** for CPU, memory, download or upload.
+- Use **More → Wi-Fi DNS rules** to configure the default and exact rules.
+- `sudo ftop grant` optionally enables system-process visibility through the small,
+  argument-free helper included in the source tree.
 
-### Updates
+## Validation and scope
 
-ftop looks for a newer release once a day and installs it: it downloads the release
-from this repository, checks it, replaces `Ftop.app`, and restarts the panel. Under
-**More → Updates** you can switch this to *Tell me* (the update is then offered there)
-or *Never check* (ftop never goes online). `ftop update` looks right now and
-`ftop version` prints what is installed.
+The current build is `0.2.6 (16)`. `scripts/check.sh` passes strict formatting, a
+warning-free production build and two complete 228-test runs. DNS writes in tests use
+fake backends; the validation record and UI references live in
+[`docs/evidence/2026-10-29-default-dns-rule/`](docs/evidence/2026-10-29-default-dns-rule/).
 
-An update never changes the helper that `sudo ftop grant` installed. If a new version
-needs a newer helper, `ftop doctor` says so and you grant again.
+ftop supports English and Chinese. It intentionally has no history graphs or disk
+panel. Private macOS sensor APIs can change with a system update; missing values are
+reported honestly.
 
-### System processes
+## Origin and license
 
-Without extra rights macOS only lets ftop see your own processes. To include system
-ones such as `WindowServer`, grant access once:
-
-```bash
-sudo ftop grant
-```
-
-This marks one small helper inside the app as setuid root. The helper takes no
-arguments, reads no environment, writes no files, and only prints the process table;
-its source is `Sources/ftop-helper/main.swift`.
-
-## Limits
-
-- Apple Silicon only. Core grouping and per-core frequency rely on it.
-- Per-core frequency and temperature come from private macOS interfaces (IOReport and
-  the HID sensor services). They can change with a macOS update; a reading that is not
-  available is shown as unavailable, never as zero. For the same reason ftop cannot be
-  distributed through the Mac App Store.
-- The interface is in English and Chinese.
-
-## Develop
-
-`scripts/check.sh` is the gate: formatting, a warning-free build, and the tests. The
-pictures on this page are produced by ftop's own drawing code with sample readings
-(`scripts/readme-media.sh`) and set on a stand-in wallpaper; the real window uses the
-macOS glass material, so its background follows whatever is behind it.
-Product decisions are in [docs/product/](docs/product/), the architecture in
-[docs/architecture/](docs/architecture/), and the rules for coding agents in
-[AGENTS.md](AGENTS.md).
-
-ftop began as a fork of [btop](https://github.com/aristocratos/btop) and was then
-rewritten from scratch; it shares no code with it.
-
-## Issues and contributions
-
-Report a problem or make a suggestion through the forms on the
-[issues page](https://github.com/Nongfsq/ftop/issues/new/choose); a report needs the
-output of `ftop doctor`. Pull requests from outside the project are not accepted. The
-rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Support
-
-ftop is free and open source. If it earns a place on your desktop, you can
-buy me a coffee.
-
-<a href="https://buymeacoffee.com/frankmenger"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="44"></a>
-
-## License
-
-[MIT](LICENSE)
+This personal edition is based on [Nongfsq/ftop](https://github.com/Nongfsq/ftop).
+ftop was rewritten from scratch after beginning as a btop fork and shares no btop
+code. Licensed under [MIT](LICENSE).
