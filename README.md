@@ -116,6 +116,10 @@ reported honestly.
 
 ## Origin and license
 
-This personal edition is based on [Nongfsq/ftop](https://github.com/Nongfsq/ftop).
-ftop was rewritten from scratch after beginning as a btop fork and shares no btop
-code. Licensed under [MIT](LICENSE).
+This personal enhanced edition is based on
+[Nongfsq/ftop](https://github.com/Nongfsq/ftop). It retains substantial upstream
+ftop code, including the core monitoring, adaptive floating-panel layout, and sensor
+implementations, while adding per-Wi-Fi DNS switching, a non-removable default DNS
+rule, and per-process network rankings. The upstream ftop project began as a btop
+fork but was later independently rewritten and shares no btop code. Licensed under
+[MIT](LICENSE).

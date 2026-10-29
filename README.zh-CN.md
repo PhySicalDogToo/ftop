@@ -104,5 +104,7 @@ ftop 支持中文和英文，故意不加入历史曲线和磁盘面板。macOS 
 
 ## 来源和许可证
 
-这个人版本基于 [Nongfsq/ftop](https://github.com/Nongfsq/ftop)。ftop 早期从 btop 分支出来，
-之后已经从头重写，不共享 btop 代码。项目采用 [MIT](LICENSE) 许可证。
+本项目是基于 [Nongfsq/ftop](https://github.com/Nongfsq/ftop) 开发的个人增强版本，
+保留了上游 ftop 的核心监控、浮窗布局和传感器实现，并新增 Wi‑Fi DNS 自动切换、
+不可删除的默认 DNS 规则及进程网络排行等功能。上游 ftop 最初由 btop 派生，后来已独立重写，
+当前不共享 btop 代码。项目采用 [MIT](LICENSE) 许可证。
