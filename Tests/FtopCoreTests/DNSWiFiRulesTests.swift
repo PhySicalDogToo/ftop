@@ -95,6 +95,7 @@ import Testing
         let configuration = fixture()
         guard
             case .apply(let fallback) = policy.decide(
+                at: 0,
                 configuration: configuration,
                 context: context(
                     ssid: "Other", servers: ["8.8.8.8"], fingerprint: 1))
@@ -107,6 +108,7 @@ import Testing
         policy.reset()
         guard
             case .unchanged(let alreadyAutomatic) = policy.decide(
+                at: 0,
                 configuration: configuration,
                 context: context(
                     ssid: "Other", servers: [], hasKey: false,
@@ -120,6 +122,7 @@ import Testing
         disabled.enabled = false
         #expect(
             policy.decide(
+                at: 0,
                 configuration: disabled,
                 context: context(ssid: "Home", fingerprint: 1)) == .off)
     }
@@ -131,6 +134,7 @@ import Testing
             ssid: "Home", servers: ["9.9.9.9"], fingerprint: 1)
         guard
             case .apply(let rule) = policy.decide(
+                at: 0,
                 configuration: configuration, context: before)
         else {
             Issue.record("Expected the first mismatched rule to apply")
@@ -145,6 +149,7 @@ import Testing
         policy.recordApplied(context: after)
         guard
             case .unchanged = policy.decide(
+                at: 0,
                 configuration: configuration, context: after)
         else {
             Issue.record("Expected the verified rule to remain unchanged")
@@ -158,6 +163,7 @@ import Testing
             rules: [.init(ssid: "Office", mode: .automatic)])
         guard
             case .apply = policy.decide(
+                at: 0,
                 configuration: configuration,
                 context: context(
                     ssid: "Office", servers: [], hasKey: true,
@@ -169,6 +175,7 @@ import Testing
         policy.reset()
         guard
             case .unchanged = policy.decide(
+                at: 0,
                 configuration: configuration,
                 context: context(
                     ssid: "Office", servers: [], hasKey: false,
@@ -179,27 +186,29 @@ import Testing
         }
     }
 
-    @Test func externalChangeAndFailedWriteBlockOnlyThatAssociation() {
+    @Test func externalChangeCanReassertButFailedWriteStillBlocksThatAssociation() {
         var policy = DNSWiFiRulePolicy()
         let configuration = fixture()
         let original = context(
             ssid: "Home", servers: ["9.9.9.9"], fingerprint: 1)
-        _ = policy.decide(configuration: configuration, context: original)
+        _ = policy.decide(at: 0, configuration: configuration, context: original)
         guard
-            case .blocked(.externalConfigurationChange) = policy.decide(
+            case .apply = policy.decide(
+                at: 0,
                 configuration: configuration,
                 context: context(
                     ssid: "Home", servers: ["8.8.8.8"], fingerprint: 2))
         else {
-            Issue.record("External DNS must stop reassertion")
+            Issue.record("An isolated external DNS change must allow reassertion")
             return
         }
 
         policy.reset()
-        _ = policy.decide(configuration: configuration, context: original)
+        _ = policy.decide(at: 0, configuration: configuration, context: original)
         policy.recordFailure(context: original)
         guard
             case .blocked(.writeFailed) = policy.decide(
+                at: 0,
                 configuration: configuration, context: original)
         else {
             Issue.record("A failed write must not retry")
@@ -208,6 +217,7 @@ import Testing
 
         guard
             case .apply = policy.decide(
+                at: 0,
                 configuration: configuration,
                 context: context(
                     ssid: "Home", connection: 2, servers: ["9.9.9.9"],

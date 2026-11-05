@@ -35,10 +35,13 @@ public enum DNSWiFiRuleDecision: Sendable, Equatable {
     case unchanged(DNSWiFiRuleMatch)
 }
 
-/// Pure, event-driven protection against reassertion loops. A save or a new
-/// association resets its baseline; a failed/externally changed connection is
-/// never retried until then.
+/// Event-driven reassertion with a rolling contention budget. Only observed
+/// address changes away from the selected rule count; verified own writes and
+/// unrelated DNS fields do not. Time is injected, never read from the system.
 public struct DNSWiFiRulePolicy: Sendable {
+    public static let reassertionWindow: TimeInterval = 60
+    public static let maximumReassertions = 5
+
     private struct Connection: Sendable, Equatable {
         var ssid: String
         var locationID: String
@@ -48,12 +51,14 @@ public struct DNSWiFiRulePolicy: Sendable {
 
     private struct Observation: Sendable {
         var connection: Connection
-        var dnsFingerprint: Data
+        var context: DNSWiFiRuleContext
     }
 
     private var observation: Observation?
     private var blockedConnection: Connection?
     private var blockedReason: DNSWiFiRuleDecision.BlockedReason?
+    private var externalChangeTimes: [TimeInterval] = []
+    public var externalChangeCount: Int { externalChangeTimes.count }
 
     public init() {}
 
@@ -61,10 +66,11 @@ public struct DNSWiFiRulePolicy: Sendable {
         observation = nil
         blockedConnection = nil
         blockedReason = nil
+        externalChangeTimes = []
     }
 
     public mutating func decide(
-        configuration: DNSWiFiRulesConfiguration, context: DNSWiFiRuleContext
+        at now: TimeInterval, configuration: DNSWiFiRulesConfiguration, context: DNSWiFiRuleContext
     ) -> DNSWiFiRuleDecision {
         guard configuration.enabled else {
             reset()
@@ -72,6 +78,7 @@ public struct DNSWiFiRulePolicy: Sendable {
         }
         let valid: DNSWiFiRulesConfiguration
         do { valid = try configuration.validated() } catch { return .blocked(.invalidConfiguration) }
+        guard now.isFinite else { return .blocked(.invalidConfiguration) }
 
         let connection: Connection
         switch context.network {
@@ -94,16 +101,9 @@ public struct DNSWiFiRulePolicy: Sendable {
             return .blocked(.invalidConfiguration)
         }
         if blockedConnection == connection, let blockedReason { return .blocked(blockedReason) }
-        if let observation, observation.connection == connection,
-            observation.dnsFingerprint != context.dnsFingerprint
-        {
-            blockedConnection = connection
-            blockedReason = .externalConfigurationChange
-            return .blocked(.externalConfigurationChange)
-        }
         if observation?.connection != connection {
-            observation = Observation(
-                connection: connection, dnsFingerprint: context.dnsFingerprint)
+            observation = nil
+            externalChangeTimes = []
             blockedConnection = nil
             blockedReason = nil
         }
@@ -115,6 +115,24 @@ public struct DNSWiFiRulePolicy: Sendable {
         case .custom(let addresses):
             matches = DNSAddressList.equivalent(addresses, context.manualServers)
         }
+
+        externalChangeTimes.removeAll { now - $0 >= Self.reassertionWindow || $0 > now }
+        if let previous = observation?.context,
+            previous.dnsFingerprint != context.dnsFingerprint, !matches,
+            previous.hasManualAddressKey != context.hasManualAddressKey
+                || !(previous.manualServers == context.manualServers
+                    || DNSAddressList.equivalent(previous.manualServers, context.manualServers))
+        {
+            externalChangeTimes.append(now)
+            if externalChangeTimes.count > Self.maximumReassertions {
+                blockedConnection = connection
+                blockedReason = .externalConfigurationChange
+                return .blocked(.externalConfigurationChange)
+            }
+        }
+        // Adopting this read deduplicates repeated notifications. It is still an
+        // immutable transaction baseline: a subsequent race must fail validation.
+        observation = Observation(connection: connection, context: context)
         return matches ? .unchanged(match) : .apply(match)
     }
 
@@ -123,7 +141,7 @@ public struct DNSWiFiRulePolicy: Sendable {
             blockedConnection != connection, !context.dnsFingerprint.isEmpty
         else { return }
         observation = Observation(
-            connection: connection, dnsFingerprint: context.dnsFingerprint)
+            connection: connection, context: context)
     }
 
     public mutating func recordFailure(context: DNSWiFiRuleContext) {

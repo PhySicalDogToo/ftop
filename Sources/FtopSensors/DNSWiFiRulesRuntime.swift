@@ -25,6 +25,7 @@ final class DNSWiFiRulesCancellation: @unchecked Sendable {
     func current() -> UInt64 { lock.withLock { revision } }
 
     func arm(_ expected: UInt64) throws {
+        try Task.checkCancellation()
         try lock.withLock {
             guard revision == expected else { throw stopped() }
             armed = true
@@ -32,6 +33,7 @@ final class DNSWiFiRulesCancellation: @unchecked Sendable {
     }
 
     func check(_ expected: UInt64, requiresArmed: Bool = true) throws {
+        try Task.checkCancellation()
         guard
             lock.withLock({
                 revision == expected && (!requiresArmed || armed)
@@ -74,6 +76,8 @@ public actor DNSWiFiRulesRuntime {
         cancellation.current()
     }
 
+    /// Session presence only; native rights are checked without interaction at
+    /// every write boundary. A no-write denial is renewed by the coordinator.
     public func hasAuthorizedSession() -> Bool { backend != nil }
 
     /// Called from a persisted enabled intent or an explicit Save & Apply action.
@@ -163,7 +167,11 @@ public actor DNSWiFiRulesRuntime {
         defer { backend.beforeMutationCheck = nil }
 
         let result = try DNSChangeTransaction.save(
-            DNSChangeRequest(target: target, mode: mode), backend: backend)
+            DNSChangeRequest(target: target, mode: mode), backend: backend,
+            // The coordinator's bounded rule policy owns arbitration. The
+            // presence of a known writer alone cannot veto a rule reassertion;
+            // every actual baseline/lock/commit/readback check remains mandatory.
+            permitCompetingWriter: true)
         do {
             try backend.beforeMutationCheck?()
         } catch {

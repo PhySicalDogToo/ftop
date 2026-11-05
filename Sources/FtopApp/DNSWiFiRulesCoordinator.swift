@@ -3,8 +3,36 @@ import FtopCore
 import FtopSensors
 import FtopUI
 
+/// Injectable boundaries keep authorization and network reads out of coordinator tests.
+protocol DNSWiFiRulesRunning: Sendable {
+    func requestStop()
+    func operationRevision() -> UInt64
+    func hasAuthorizedSession() async -> Bool
+    func authorize(expectedRevision: UInt64?) async throws
+    func pause() async
+    func observation() async throws -> DNSWiFiRulesObservation
+    func observation(confirming target: DNSEditTarget) async throws -> DNSWiFiRulesObservation
+    func apply(
+        mode: DNSManualMode, expectedSSID: String, permission: DNSWiFiPermission,
+        expected: DNSWiFiRulesObservation
+    ) async throws -> DNSWriteResult
+}
+
+extension DNSWiFiRulesRuntime: DNSWiFiRulesRunning {}
+
+@MainActor
+protocol DNSWiFiRulesMonitoring: AnyObject {
+    var permission: DNSWiFiPermission { get }
+    var onChange: (() -> Void)? { get set }
+    func start()
+    func stop()
+    func requestAccess()
+}
+
+extension DNSWiFiMonitor: DNSWiFiRulesMonitoring {}
+
 /// Connects exact-name Wi-Fi events to the existing verified DNS transaction.
-/// There is no timer, reassertion loop, proxy adapter, or helper process.
+/// Authorization always ends at a new read boundary, never at an old write target.
 @MainActor
 final class DNSWiFiRulesCoordinator {
     var canMutate: (() -> Bool)?
@@ -16,11 +44,15 @@ final class DNSWiFiRulesCoordinator {
         actions > 0 || evaluation != nil || panel?.isBusy == true
     }
 
-    private let runtime = DNSWiFiRulesRuntime()
-    private let wifi = DNSWiFiMonitor()
-    private let store = DNSWiFiRulesStore()
+    private let runtime: any DNSWiFiRulesRunning
+    private let wifi: any DNSWiFiRulesMonitoring
+    private let store: DNSWiFiRulesStore
+    private let readWiFi: @Sendable (DNSWiFiPermission) -> DNSWiFiReading
+    private let readDNS: @Sendable () -> DNSState
+    private let debounce: Duration
+    private let clock: @Sendable () -> TimeInterval
     private var configuration = DNSWiFiRulesConfiguration.defaults
-    private var status = DNSWiFiRulesStatus()
+    private(set) var status = DNSWiFiRulesStatus()
     private var configurationLoaded = true
     private var policy = DNSWiFiRulePolicy()
     private var panel: DNSWiFiRulesPanel?
@@ -30,8 +62,33 @@ final class DNSWiFiRulesCoordinator {
     private var epoch: UInt64 = 0
     private var actions = 0
     private var pendingEvent = false
+    private var stopped = false
+    private var authorizationDeclined = false
 
-    init() {
+    init(
+        runtime: any DNSWiFiRulesRunning = DNSWiFiRulesRuntime(),
+        wifi: any DNSWiFiRulesMonitoring = DNSWiFiMonitor(),
+        store: DNSWiFiRulesStore = DNSWiFiRulesStore(),
+        readWiFi: @escaping @Sendable (DNSWiFiPermission) -> DNSWiFiReading = DNSWiFiReader.read,
+        readDNS: @escaping @Sendable () -> DNSState = DNSReader.read,
+        debounce: Duration = .milliseconds(350),
+        clock: (@Sendable () -> TimeInterval)? = nil
+    ) {
+        self.runtime = runtime
+        self.wifi = wifi
+        self.store = store
+        self.readWiFi = readWiFi
+        self.readDNS = readDNS
+        self.debounce = debounce
+        // ContinuousClock includes system sleep, so old contention cannot remain
+        // inside a 60-second window after the Mac wakes. Wall-clock edits do not
+        // affect this budget either.
+        let origin = ContinuousClock.now
+        self.clock =
+            clock ?? {
+                let elapsed = origin.duration(to: .now).components
+                return Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+            }
         do {
             configuration = try store.load()
             status = initialStatus(configuration)
@@ -48,6 +105,7 @@ final class DNSWiFiRulesCoordinator {
     }
 
     func start() {
+        stopped = false
         guard configurationLoaded, rulesActive else {
             wifi.stop()
             refreshPassive()
@@ -77,10 +135,11 @@ final class DNSWiFiRulesCoordinator {
         panel?.present(
             configuration: configuration, status: status,
             palette: palette?() ?? .sea, busy: actions > 0 || evaluation != nil)
-        refreshPassive()
+        if rulesActive, wifi.permission == .authorized { requestEvaluation() } else { refreshPassive() }
     }
 
     func shutdown() {
+        stopped = true
         epoch &+= 1
         pendingEvent = false
         evaluation?.cancel()
@@ -97,7 +156,7 @@ final class DNSWiFiRulesCoordinator {
         configuration.enabled
     }
 
-    private func save(
+    func save(
         _ draft: DNSWiFiRulesConfiguration
     ) async throws -> DNSWiFiRulesConfiguration {
         guard actions == 0, evaluation == nil else {
@@ -115,9 +174,13 @@ final class DNSWiFiRulesCoordinator {
         }
 
         epoch &+= 1
+        passiveRead?.cancel()
+        authorizationDeclined = false
         pendingEvent = false
         runtime.requestStop()
         await runtime.pause()
+        try Task.checkCancellation()
+        guard !stopped else { throw CancellationError() }
         policy.reset()
         try store.save(saved)
         configuration = saved
@@ -125,7 +188,7 @@ final class DNSWiFiRulesCoordinator {
 
         guard rulesActive else {
             wifi.stop()
-            let dns = await Task.detached(priority: .utility) { DNSReader.read() }
+            let dns = await Task.detached(priority: .utility) { [readDNS] in readDNS() }
                 .value
             status = DNSWiFiRulesStatus(
                 phase: .off, servers: dns.servers,
@@ -141,28 +204,13 @@ final class DNSWiFiRulesCoordinator {
             if wifi.permission == .notDetermined { wifi.requestAccess() }
             return saved
         }
-        do {
-            if !(await runtime.hasAuthorizedSession()) {
-                status = DNSWiFiRulesStatus(
-                    phase: .needsNetworkAuthorization,
-                    ssid: status.ssid, servers: status.servers,
-                    message: Strings.pick(
-                        "Authorize this app session so future Wi-Fi switches can apply without preparing a writer at that moment.",
-                        "请授权本次应用运行，以便以后切换 Wi-Fi 时直接应用规则。"))
-                changed()
-                let revision = runtime.operationRevision()
-                try await runtime.authorize(expectedRevision: revision)
-            }
-        } catch {
-            status = DNSWiFiRulesStatus(
-                phase: .needsNetworkAuthorization,
-                ssid: status.ssid, servers: status.servers,
-                message: Strings.pick(
-                    "Rules were saved, but network authorization was not granted. Use Save & Apply to try again.",
-                    "规则已保存，但未获得网络授权；请再次点“保存并应用”重试。"))
-            return saved
+        await evaluate(prepareSession: true)
+        if Task.isCancelled || stopped {
+            pendingEvent = false
+            runtime.requestStop()
+            await runtime.pause()
+            throw CancellationError()
         }
-        await evaluate()
         return saved
     }
 
@@ -187,6 +235,7 @@ final class DNSWiFiRulesCoordinator {
     }
 
     private func networkChanged() {
+        guard !stopped else { return }
         if wifi.permission != .authorized {
             status = needsWiFiAccessStatus()
             changed()
@@ -198,7 +247,8 @@ final class DNSWiFiRulesCoordinator {
     /// Coalesce a burst of link/SSID/BSSID notifications. Unlike polling, this
     /// schedules exactly one fresh evaluation for the observed event burst.
     private func requestEvaluation() {
-        guard configurationLoaded, rulesActive else { return }
+        guard !stopped, configurationLoaded, rulesActive else { return }
+        passiveRead?.cancel()
         guard actions == 0, evaluation == nil else {
             pendingEvent = true
             return
@@ -209,7 +259,7 @@ final class DNSWiFiRulesCoordinator {
         evaluationToken = taskToken
         evaluation = Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(for: .milliseconds(350))
+            try? await Task.sleep(for: debounce)
             guard !Task.isCancelled, token == epoch else {
                 if evaluationToken == taskToken {
                     evaluation = nil
@@ -228,8 +278,8 @@ final class DNSWiFiRulesCoordinator {
         changed()
     }
 
-    private func evaluate() async {
-        guard configurationLoaded, rulesActive else { return }
+    private func evaluate(prepareSession: Bool = false) async {
+        guard !stopped, configurationLoaded, rulesActive else { return }
         guard canMutate?() ?? true else {
             status.message = Strings.pick(
                 "Automatic DNS is waiting for the app update to finish.",
@@ -243,163 +293,257 @@ final class DNSWiFiRulesCoordinator {
             return
         }
 
-        var context: DNSWiFiRuleContext?
-        do {
-            let permission = wifi.permission
-            let reading = await Task.detached(priority: .utility) {
-                DNSWiFiReader.read(permission: permission)
-            }.value
-            guard reading.connected, let ssid = reading.ssid else {
-                let disconnected = reading.connectionKnown && !reading.connected
-                _ = policy.decide(
-                    configuration: configuration,
-                    context: DNSWiFiRuleContext(
-                        network: disconnected ? .disconnected : .unknownSSID))
-                let dns = await Task.detached(priority: .utility) {
-                    DNSReader.read()
-                }.value
-                status = DNSWiFiRulesStatus(
-                    phase: .waiting, ssid: nil, servers: dns.servers,
-                    message: Strings.pick(
-                        "Waiting for one identifiable connected Wi-Fi. DNS is unchanged.",
-                        "正在等待可识别名称的 Wi-Fi，DNS 保持不变。"))
-                changed()
-                return
-            }
-
-            let observation = try await runtime.observation()
-            guard observation.target.interfaceName == reading.interfaceName else {
-                _ = policy.decide(
-                    configuration: configuration,
-                    context: DNSWiFiRuleContext(network: .nonWiFi))
-                let dns = await Task.detached(priority: .utility) {
-                    DNSReader.read()
-                }.value
-                status = DNSWiFiRulesStatus(
-                    phase: .waiting, ssid: ssid, servers: dns.servers,
-                    message: Strings.pick(
-                        "The current physical service is not this Wi-Fi. DNS is unchanged.",
-                        "当前物理网络服务不是此 Wi-Fi，DNS 保持不变。"))
-                changed()
-                return
-            }
-
-            let before = makeContext(reading, observation)
-            context = before
-            switch policy.decide(
-                configuration: configuration, context: before)
-            {
-            case .off:
-                status = initialStatus(configuration)
-            case .waiting:
-                status = DNSWiFiRulesStatus(
-                    phase: .waiting, ssid: ssid,
-                    message: Strings.pick(
-                        "Waiting for a complete Wi-Fi and network-service snapshot. DNS is unchanged.",
-                        "正在等待完整的 Wi-Fi 与网络服务信息，DNS 保持不变。"))
-            case .blocked(let reason):
-                let match = configuration.match(forSSID: ssid)
-                status = DNSWiFiRulesStatus(
-                    phase: .blocked, ssid: ssid,
-                    matchedSSID: match?.matchedSSID,
-                    usesDefault: match?.usesDefault == true,
-                    servers: status.servers,
-                    message: blockedMessage(reason))
-            case .unchanged(let match):
-                let dns = await Task.detached(priority: .utility) {
-                    DNSReader.read()
-                }.value
-                policy.recordApplied(context: before)
-                status = activeStatus(
-                    ssid: ssid, match: match, servers: dns.servers,
-                    changed: false)
-            case .apply(let match):
-                status = DNSWiFiRulesStatus(
-                    phase: .applying, ssid: ssid,
-                    matchedSSID: match.matchedSSID,
-                    usesDefault: match.usesDefault,
-                    servers: status.servers,
-                    message: match.usesDefault
-                        ? Strings.pick(
-                            "Applying and verifying the default DNS rule…",
-                            "正在应用并验证默认 DNS 规则…")
-                        : Strings.pick(
-                            "Applying and verifying this Wi-Fi rule…",
-                            "正在应用并验证此 Wi-Fi 规则…"))
-                changed()
-
-                if await !runtime.hasAuthorizedSession() {
+        let token = epoch
+        var didAuthorize = false
+        var needsAuthorization = false
+        // At most one authorization per evaluation. Its continuation starts with
+        // new Wi-Fi, service, connection, DNS and policy inputs, not recursion.
+        for _ in 0..<2 {
+            guard isCurrent(token) else { return }
+            let previousPolicy = policy
+            var context: DNSWiFiRuleContext?
+            var enteredTransaction = false
+            var writeReturned = false
+            var requestingAuthorization = false
+            do {
+                if needsAuthorization {
+                    didAuthorize = true
+                    // Release the expired native session, including any staged
+                    // preferences. The continuation below reads everything anew.
+                    runtime.requestStop()
+                    await runtime.pause()
+                    guard isCurrent(token) else { return }
                     status.phase = .needsNetworkAuthorization
                     status.message = Strings.pick(
-                        "Authorize this app session to change the current network service.",
-                        "请授权本次应用运行修改当前网络服务。")
+                        "Waiting for macOS network authorization. DNS will be rechecked afterward.",
+                        "等待 macOS 网络授权，完成后会重新检查当前网络与 DNS。")
                     changed()
                     let revision = runtime.operationRevision()
+                    requestingAuthorization = true
                     try await runtime.authorize(expectedRevision: revision)
+                    requestingAuthorization = false
+                    guard isCurrent(token) else { return }
                 }
-                let result = try await runtime.apply(
-                    mode: match.mode, expectedSSID: ssid,
-                    permission: permission, expected: observation)
-                let after = try await runtime.observation(
-                    confirming: result.target)
-                let fresh = await Task.detached(priority: .utility) {
-                    DNSWiFiReader.read(permission: permission)
-                }.value
-                let completed = makeContext(fresh, after)
-                guard completed.network == before.network else {
-                    pendingEvent = true
+                let permission = wifi.permission
+                guard permission == .authorized else {
+                    status = needsWiFiAccessStatus()
+                    changed()
                     return
                 }
-                policy.recordApplied(context: completed)
-                status = activeStatus(
-                    ssid: ssid, match: match,
-                    servers: result.state.servers,
-                    changed: result.didChange)
-                onDNSChanged?(result.state)
+                let (reading, dns) = await Task.detached(priority: .utility) { [readWiFi, readDNS] in
+                    (readWiFi(permission), readDNS())
+                }.value
+                guard isCurrent(token) else { return }
+                // Publish a complete new presentation together. Never pair a fresh
+                // SSID with the preceding association's rule or error.
+                status = snapshotStatus(reading, dns: dns)
+                if authorizationDeclined {
+                    status.phase = .needsNetworkAuthorization
+                    status.message = authorizationMessage
+                    changed()
+                    return
+                }
+                guard reading.connected, let ssid = reading.ssid else {
+                    let disconnected = reading.connectionKnown && !reading.connected
+                    _ = policy.decide(
+                        at: clock(),
+                        configuration: configuration,
+                        context: DNSWiFiRuleContext(
+                            network: disconnected ? .disconnected : .unknownSSID))
+                    changed()
+                    return
+                }
+
+                let observation = try await runtime.observation()
+                guard isCurrent(token) else { return }
+                guard observation.target.interfaceName == reading.interfaceName else {
+                    _ = policy.decide(
+                        at: clock(),
+                        configuration: configuration,
+                        context: DNSWiFiRuleContext(network: .nonWiFi))
+                    changed()
+                    return
+                }
+
+                let before = makeContext(reading, observation)
+                context = before
+                // A tentative decision must not establish an external-change
+                // baseline while an administrator sheet is still outstanding.
+                var candidatePolicy = policy
+                let decision = candidatePolicy.decide(
+                    at: clock(),
+                    configuration: configuration, context: before)
+                let requiresSession: Bool
+                switch decision {
+                case .apply: requiresSession = true
+                case .unchanged: requiresSession = prepareSession
+                default: requiresSession = false
+                }
+                if requiresSession, await !runtime.hasAuthorizedSession() {
+                    guard isCurrent(token) else { return }
+                    guard !didAuthorize else {
+                        throw DNSChangeError(code: .permissionDenied, message: authorizationMessage)
+                    }
+                    needsAuthorization = true
+                    // Discard every tentative value above. No failed-write record,
+                    // stale rule or pre-authorization target reaches apply().
+                    continue
+                }
+                guard isCurrent(token) else { return }
+                policy = candidatePolicy
+                switch decision {
+                case .off:
+                    status = initialStatus(configuration)
+                case .waiting:
+                    break
+                case .blocked(let reason):
+                    let match = configuration.match(forSSID: ssid)
+                    status = DNSWiFiRulesStatus(
+                        phase: .blocked, ssid: ssid,
+                        matchedSSID: match?.matchedSSID,
+                        usesDefault: match?.usesDefault == true,
+                        servers: dns.servers,
+                        message: blockedMessage(reason))
+                case .unchanged(let match):
+                    policy.recordApplied(context: before)
+                    status = activeStatus(
+                        ssid: ssid, match: match, servers: dns.servers,
+                        changed: false)
+                case .apply(let match):
+                    status = DNSWiFiRulesStatus(
+                        phase: .applying, ssid: ssid,
+                        matchedSSID: match.matchedSSID,
+                        usesDefault: match.usesDefault,
+                        servers: dns.servers,
+                        message: match.usesDefault
+                            ? Strings.pick(
+                                "Applying and verifying the default DNS rule…",
+                                "正在应用并验证默认 DNS 规则…")
+                            : Strings.pick(
+                                "Applying and verifying this Wi-Fi rule…",
+                                "正在应用并验证此 Wi-Fi 规则…"))
+                    changed()
+
+                    enteredTransaction = true
+                    let result = try await runtime.apply(
+                        mode: match.mode, expectedSSID: ssid,
+                        permission: permission, expected: observation)
+                    writeReturned = true
+                    guard isCurrent(token) else { return }
+                    let after = try await runtime.observation(
+                        confirming: result.target)
+                    let fresh = await Task.detached(priority: .utility) { [readWiFi] in
+                        readWiFi(permission)
+                    }.value
+                    guard isCurrent(token) else { return }
+                    let completed = makeContext(fresh, after)
+                    guard completed.network == before.network else {
+                        status = snapshotStatus(fresh, dns: result.state)
+                        pendingEvent = true
+                        changed()
+                        return
+                    }
+                    policy.recordApplied(context: completed)
+                    status = activeStatus(
+                        ssid: ssid, match: match,
+                        servers: result.state.servers,
+                        changed: result.didChange)
+                    onDNSChanged?(result.state)
+                }
+                changed()
+            } catch {
+                guard isCurrent(token) else { return }
+                if enteredTransaction, !writeReturned, !didAuthorize,
+                    let change = error as? DNSChangeError,
+                    change.code == .permissionDenied, change.persistence == .unchanged
+                {
+                    // A retained object is not proof of valid credentials. Only
+                    // a confirmed no-write denial may reopen authorization, once.
+                    // Do not spend the policy budget or retain this stale target.
+                    policy = previousPolicy
+                    needsAuthorization = true
+                    continue
+                }
+                let authorizationRejected =
+                    (error as? DNSChangeError).map {
+                        $0.persistence == .unchanged
+                            && ($0.code == .permissionDenied || $0.code == .authorizationCancelled)
+                    } == true
+                if requestingAuthorization || (!writeReturned && authorizationRejected) {
+                    authorizationDeclined = true
+                    runtime.requestStop()
+                    await runtime.pause()
+                    guard isCurrent(token) else { return }
+                    status = DNSWiFiRulesStatus(
+                        phase: .needsNetworkAuthorization,
+                        ssid: status.ssid,
+                        matchedSSID: status.matchedSSID,
+                        usesDefault: status.usesDefault,
+                        servers: status.servers,
+                        message: authorizationRejected
+                            ? authorizationMessage
+                            : errorMessage(error) + "\n"
+                                + Strings.pick(
+                                    "Use Save & Apply to try authorization again.",
+                                    "请点“保存并应用”重新授权。"))
+                } else if !enteredTransaction,
+                    let change = error as? DNSChangeError,
+                    change.code == .noPhysicalService
+                {
+                    // An association may precede DHCP/service readiness. Native
+                    // service/IP/link notifications will request another fresh read.
+                    status.phase = .waiting
+                } else {
+                    if let context { policy.recordFailure(context: context) }
+                    status = DNSWiFiRulesStatus(
+                        phase: .blocked, ssid: status.ssid,
+                        matchedSSID: status.matchedSSID,
+                        usesDefault: status.usesDefault,
+                        servers: status.servers,
+                        message: errorMessage(error))
+                }
+                changed()
             }
-            changed()
-        } catch {
-            if let change = error as? DNSChangeError,
-                change.code == .permissionDenied
-                    || change.code == .authorizationCancelled
-            {
-                runtime.requestStop()
-                await runtime.pause()
-                status = DNSWiFiRulesStatus(
-                    phase: .needsNetworkAuthorization,
-                    ssid: status.ssid,
-                    matchedSSID: status.matchedSSID,
-                    usesDefault: status.usesDefault,
-                    servers: status.servers,
-                    message: Strings.pick(
-                        "Network authorization was not granted. Rules remain saved; use Save & Apply to authorize this app session.",
-                        "未获得网络授权。规则已保存；请再次点“保存并应用”授权本次运行。"))
-            } else {
-                if let context { policy.recordFailure(context: context) }
-                status = DNSWiFiRulesStatus(
-                    phase: .blocked, ssid: status.ssid,
-                    matchedSSID: status.matchedSSID,
-                    usesDefault: status.usesDefault,
-                    servers: status.servers,
-                    message: errorMessage(error))
-            }
-            changed()
+            return
         }
     }
 
+    private func isCurrent(_ token: UInt64) -> Bool {
+        !stopped && !Task.isCancelled && token == epoch && rulesActive && wifi.permission == .authorized
+    }
+
+    private var authorizationMessage: String {
+        Strings.pick(
+            "Network authorization was not granted. Rules remain saved; use Save & Apply to authorize this app session.",
+            "未获得网络授权。规则已保存；请再次点“保存并应用”授权本次运行。")
+    }
+
+    private func snapshotStatus(_ reading: DNSWiFiReading, dns: DNSState) -> DNSWiFiRulesStatus {
+        let match = reading.connected ? configuration.match(forSSID: reading.ssid) : nil
+        return DNSWiFiRulesStatus(
+            phase: .waiting, ssid: reading.ssid,
+            matchedSSID: match?.matchedSSID, usesDefault: match?.usesDefault == true,
+            servers: dns.servers,
+            message: Strings.pick(
+                "Waiting for network readiness. Network changes will recheck DNS.",
+                "等待网络就绪，DNS 保持不变；网络信息更新后会重新检查。"))
+    }
+
     private func refreshPassive() {
-        guard panel?.isShown == true else { return }
+        guard panel?.isShown == true, actions == 0, evaluation == nil else { return }
         passiveRead?.cancel()
         let token = epoch
         let permission = wifi.permission
-        passiveRead = Task { [weak self] in
-            let (reading, dns) = await Task.detached(priority: .utility) {
+        passiveRead = Task { [weak self, readWiFi, readDNS] in
+            let (reading, dns) = await Task.detached(priority: .utility) { [readWiFi, readDNS] in
                 (
-                    DNSWiFiReader.read(permission: permission),
-                    DNSReader.read()
+                    readWiFi(permission), readDNS()
                 )
             }.value
-            guard !Task.isCancelled, let self, token == epoch else { return }
+            guard !Task.isCancelled, let self, !stopped, token == epoch,
+                actions == 0, evaluation == nil
+            else { return }
+            status = initialStatus(configuration)
             status.ssid = reading.ssid
             status.servers = dns.servers
             if rulesActive, permission != .authorized {
@@ -440,11 +584,11 @@ final class DNSWiFiRulesCoordinator {
             message: changed
                 ? match.usesDefault
                     ? Strings.pick(
-                        "The default DNS rule was applied and verified. Future writes occur only on Wi-Fi events.",
-                        "默认 DNS 规则已应用并验证；以后只在 Wi-Fi 事件发生时写入。")
+                        "The default DNS rule was applied and verified.",
+                        "默认 DNS 规则已应用并验证。")
                     : Strings.pick(
-                        "The exact rule was applied and verified. Future writes occur only on Wi-Fi events.",
-                        "精确 Wi-Fi 规则已应用并验证；以后只在 Wi-Fi 事件发生时写入。")
+                        "The exact Wi-Fi DNS rule was applied and verified.",
+                        "精确 Wi-Fi DNS 规则已应用并验证。")
                 : match.usesDefault
                     ? Strings.pick(
                         "The current service already matches the default DNS rule. No write was needed.",
@@ -475,7 +619,7 @@ final class DNSWiFiRulesCoordinator {
         servers: [String] = []
     ) -> DNSWiFiRulesStatus {
         DNSWiFiRulesStatus(
-            phase: .needsWiFiAccess, ssid: status.ssid,
+            phase: .needsWiFiAccess,
             servers: servers.isEmpty ? status.servers : servers,
             message: Strings.pick(
                 "macOS location permission is used only to read the connected Wi-Fi name. No DNS is changed without it.",
@@ -488,8 +632,8 @@ final class DNSWiFiRulesCoordinator {
         switch reason {
         case .externalConfigurationChange:
             Strings.pick(
-                "DNS changed outside ftop on this connection. Automatic writes stopped; save the rules again after reviewing the current settings.",
-                "此连接的 DNS 被外部修改，自动写入已停止；请检查当前设置后重新保存规则。")
+                "DNS changed over 5 times in 60 s. Keeping external DNS until reconnect or Save & Apply.",
+                "60 秒内 DNS 被改写超过 5 次，已保留外部设置；重连或重新保存规则可恢复。")
         case .invalidConfiguration:
             Strings.pick(
                 "The saved rule set is invalid. Review and save it again.",

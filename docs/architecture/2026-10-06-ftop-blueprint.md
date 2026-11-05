@@ -544,23 +544,47 @@ mechanism; the separate current-service editor has since been removed.
 
 - FtopCore owns versioned `DNSWiFiRulesConfiguration` values and strict validation,
   plus the pure `DNSWiFiRulePolicy` state machine. The policy distinguishes absent
-  and empty ServerAddresses, compares the complete DNS fingerprint, suppresses a
-  stable verified match, and blocks external changes or failed writes per Wi-Fi
-  association. Exact-name lookup precedes the required default rule, so every
+  and empty ServerAddresses, compares semantic ordered addresses as well as the
+  complete DNS fingerprint, and suppresses a stable verified match. An injected
+  monotonic timestamp drives a rolling 60-second budget: reassert the first five
+  observed external address changes away from the target; the sixth blocks that
+  association until a new connection or Save & Apply. Metadata-only changes and
+  duplicate reads do not consume budget; verified own writes do not reset it.
+  Failed/uncertain writes still block immediately. Exact-name lookup precedes the required default rule, so every
   identifiable Wi-Fi has one value-only `DNSWiFiRuleMatch`. It has no system imports.
 - FtopSensors owns `DNSWiFiReader`/`DNSWiFiMonitor`, the v2 rule store, and the
   retained native authorization/runtime primitives. CoreWLAN/CoreLocation are used
   only here to read the connected SSID and connection identity. The monitor emits
-  SSID, BSSID, link, power and wake events; it does not scan or poll. The v2 store
+  SSID, BSSID, link, power, wake and raw SystemConfiguration service/IP/DNS hints;
+  it reuses the read-only dynamic-store observer without DNS-value suppression.
+  It does not scan or poll. The v2 store
   validates and verifies its write and deliberately ignores retired v1 automation.
 - `DNSNativeBackend` implements the rule write protocol. Explicit Save & Apply may
-  acquire native session authorization;
+  prepare native session authorization even when the service already matches;
   later rule transactions use it noninteractively. Every write still uses
   `DNSChangeTransaction`: authorize, lock without waiting, revalidate identity and
   baseline, replace only ServerAddresses, commit, apply, and reread all DNS fields.
+  Only this bounded automation route permits a competing writer process to be
+  present; the one-shot kernel's default presence veto remains. Neither route
+  bypasses baseline conflicts, authorization, locking or write verification.
 - FtopApp's `DNSWiFiRulesCoordinator` is the only lifecycle coordinator. It starts
-  monitoring only for an enabled nonempty configuration, coalesces event bursts,
-  evaluates one exact rule, and owns generation/connection guards. Quit and update
+  monitoring only for an enabled configuration, coalesces event bursts,
+  evaluates exact/default rules, and owns generation/connection guards. A bounded
+  two-pass evaluation discards its tentative policy and all inputs after successful
+  authorization; only a new snapshot can enter the unchanged/write path. A missing
+  physical service before transaction entry remains waiting for a native readiness
+  hint, while uncertain transactions and over-budget contention retain association blocks.
+  Authorization failures suppress repeated prompts until explicit Save & Apply.
+  Retaining a backend is not proof that the macOS credential remains valid;
+  a transaction's confirmed no-write permission denial requests one native renewal
+  prompt (2026-11-06), releases the stale session and discards the tentative policy.
+  The second pass authorizes before all network reads, then rematches from scratch.
+  Cancellation/failure or denial after a new grant latches until Save & Apply;
+  saved/unknown results never renew/retry. Credential renewal does not reset or
+  double-count external-override history. Already matching DNS needs no renewal.
+  Passive completions cannot overwrite active evaluations or retain a stale match.
+  Runtime/monitor/read closures are injectable; coordinator tests never create a
+  native permission manager, writer or authorization dialog. Quit and update
   installation are blocked only during an active rule operation. No sampler or
   render tick can trigger a DNS write.
 - FtopUI receives value models and async callbacks only. The rules panel keeps its

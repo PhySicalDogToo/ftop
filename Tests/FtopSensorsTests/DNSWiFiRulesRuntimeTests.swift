@@ -5,6 +5,18 @@ import Testing
 @testable import FtopSensors
 
 @Suite struct DNSWiFiRulesRuntimeTests {
+    @Test func taskCancellationCannotArmOrReuseAuthorization() async throws {
+        let latch = DNSWiFiRulesCancellation()
+        let revision = latch.current()
+        try latch.arm(revision)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            #expect(throws: CancellationError.self) { try latch.arm(revision) }
+            #expect(throws: CancellationError.self) { try latch.check(revision) }
+        }
+        await task.value
+    }
+
     @Test func cancellationLatchInvalidatesArmedAndQueuedWork() throws {
         let latch = DNSWiFiRulesCancellation()
         let revision = latch.current()
@@ -69,7 +81,37 @@ import Testing
         #expect(confirmed.hasManualAddressKey)
     }
 
-    @Test func expiredBackgroundAuthorizationNeverPromptsAgain() async throws {
+    @Test func ruleCanReassertWhileAKnownWriterIsRunningAndPreservesOtherFields() async throws {
+        let backend = DNSWiFiRulesFakeBackend()
+        backend.competingWriterRunning = true
+        let runtime = makeRuntime(backend)
+        try await runtime.authorize()
+        let expected = try await runtime.observation()
+        let result = try await runtime.apply(
+            mode: .automatic, expectedSSID: "Office", permission: .authorized, expected: expected)
+        #expect(result.target.manualServers.isEmpty)
+        #expect(backend.snapshot.configuration?["SearchDomains"] as? [String] == ["example.test"])
+        #expect(backend.commitCount == 1)
+    }
+
+    @Test func competingWriterPermissionNeverBypassesAChangedBaseline() async throws {
+        let backend = DNSWiFiRulesFakeBackend()
+        backend.competingWriterRunning = true
+        let runtime = makeRuntime(backend)
+        try await runtime.authorize()
+        let expected = try await runtime.observation()
+        backend.snapshot.configuration?["ServerAddresses"] = ["8.8.8.8"]
+        do {
+            _ = try await runtime.apply(
+                mode: .automatic, expectedSSID: "Office", permission: .authorized, expected: expected)
+            Issue.record("Reassertion cannot use a stale DNS baseline")
+        } catch let error as DNSChangeError {
+            #expect(error.code == .conflict)
+        }
+        #expect(backend.commitCount == 0)
+    }
+
+    @Test func expiredSessionDoesNotPromptInsideTransactionAndCanBeRenewedExplicitly() async throws {
         let backend = DNSWiFiRulesFakeBackend()
         let runtime = makeRuntime(backend)
         try await runtime.authorize()
@@ -82,9 +124,17 @@ import Testing
             Issue.record("Expired authorization must block")
         } catch let error as DNSChangeError {
             #expect(error.code == .permissionDenied)
+            #expect(error.persistence == .unchanged)
         }
         #expect(backend.interactiveAuthorizations == 1)
         #expect(backend.commitCount == 0)
+        await runtime.pause()
+        try await runtime.authorize()
+        let fresh = try await runtime.observation()
+        _ = try await runtime.apply(
+            mode: .automatic, expectedSSID: "Office", permission: .authorized, expected: fresh)
+        #expect(backend.interactiveAuthorizations == 2)
+        #expect(backend.commitCount == 1)
     }
 
     @Test func serviceOrDNSChangesCannotInheritTheVerifiedBaseline() async throws {
@@ -193,11 +243,13 @@ private final class DNSWiFiRulesFakeBackend: DNSWiFiRulesWriteBackend,
     var interactiveAuthorizations = 0
     var commitCount = 0
     var onStage: (() -> Void)?
+    var competingWriterRunning = false
 
     func current() throws -> DNSConfigurationSnapshot { snapshot }
-    func externalWriterRunning() throws -> Bool { false }
+    func externalWriterRunning() throws -> Bool { competingWriterRunning }
     func authorizeAutomationSession() throws {
         interactiveAuthorizations += 1
+        silentAuthorizationFails = false
     }
     func authorize() throws {
         if silentAuthorizationFails {

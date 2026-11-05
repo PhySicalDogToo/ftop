@@ -32,7 +32,7 @@ final class DNSWiFiRulesContent: NSView {
     private let statusDot = NSView()
     private let identity = NSTextField(wrappingLabelWithString: "")
     private let dns = NSTextField(wrappingLabelWithString: "")
-    private let statusMessage = NSTextField(wrappingLabelWithString: "")
+    let statusMessage = NSTextField(wrappingLabelWithString: "")
     private let enabledLabel = NSTextField(
         labelWithString: Strings.pick(
             "Automatic switching", "自动切换"))
@@ -251,7 +251,12 @@ final class DNSWiFiRulesContent: NSView {
         frame.size.width = width
         let textWidth = width - PanelStyle.dnsRulesPadding * 2
         defaultRule.prepareLayout(width: textWidth)
-        for label in [identity, dns, statusMessage, ruleHelp, notice] {
+        for label in [identity, dns, statusMessage] {
+            // These labels sit inside the status card, not on the outer stack.
+            // Measure at their actual inset width so a wrapped last line is kept.
+            label.preferredMaxLayoutWidth = textWidth - PanelStyle.dnsRulesCardInset * 2
+        }
+        for label in [ruleHelp, notice] {
             label.preferredMaxLayoutWidth = textWidth
         }
         rulesHeight.constant = min(
@@ -492,7 +497,7 @@ final class DNSWiFiRulesContent: NSView {
     static func phaseName(_ phase: DNSWiFiRulesStatus.Phase) -> String {
         switch phase {
         case .off: Strings.pick("Automatic DNS is off", "自动 DNS 已关闭")
-        case .waiting: Strings.pick("Waiting for Wi-Fi", "等待 Wi-Fi")
+        case .waiting: Strings.pick("Waiting for network", "等待网络就绪")
         case .needsWiFiAccess:
             Strings.pick("Wi-Fi name access required", "需要读取 Wi-Fi 名称")
         case .needsNetworkAuthorization:

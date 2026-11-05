@@ -26,8 +26,15 @@ changes.
   list of custom IPv4/IPv6 addresses.
 - For two custom resolvers, enter the preferred DNS first and the alternate second.
   macOS may still choose any available resolver, so strict failover is not promised.
-- Changes run only after Save and on Wi-Fi/link/wake events. There is no polling or
-  continuous overwrite loop.
+- Save, Wi-Fi/link/wake and network-configuration events trigger checks without
+  polling. Network-configuration events reapply a rule after an external DNS
+  address change; the sixth observed override within a rolling 60 seconds pauses
+  reassertion for that connection and keeps the external setting. Reconnect or
+  Save & Apply starts again. Native authorization is still required.
+- If a required write finds expired network authorization before saving anything,
+  ftop asks once with the macOS authorization dialog, then rereads the current
+  network and rules. Cancelling or failed authorization pauses prompts until
+  **Save & Apply**; already matching DNS needs no renewal.
 - Native authorization, service identity checks, conflict detection, commit/apply
   and read-back verification protect every write.
 - Location permission is used only to read the connected Wi-Fi name. If the name
@@ -105,10 +112,10 @@ ftop doctor --network   # inspect process-network collection
 
 ## Validation and scope
 
-The current build is `0.2.6 (16)`. `scripts/check.sh` passes strict formatting, a
-warning-free production build and two complete 228-test runs. DNS writes in tests use
+The current build is `0.2.6 (18)`. `scripts/check.sh` validates strict formatting, a
+warning-free build and two complete test runs. DNS writes in tests use
 fake backends; the validation record and UI references live in
-[`docs/evidence/2026-10-29-default-dns-rule/`](docs/evidence/2026-10-29-default-dns-rule/).
+[`docs/evidence/2026-11-06-dns-authorization-renewal/`](docs/evidence/2026-11-06-dns-authorization-renewal/).
 
 ftop supports English and Chinese. It intentionally has no history graphs or disk
 panel. Private macOS sensor APIs can change with a system update; missing values are

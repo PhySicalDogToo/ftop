@@ -88,6 +88,8 @@ public final class DNSWiFiMonitor: NSObject, CLLocationManagerDelegate,
     private let wifi = CWWiFiClient.shared()
     private var monitoring = false
     private var wakeObserver: NSObjectProtocol?
+    private var serviceObserver: (any DNSStatusObservation)?
+    private let serviceQueue = DispatchQueue(label: "dev.ftop.dns.wifi-services", qos: .utility)
 
     public override init() {
         super.init()
@@ -121,6 +123,13 @@ public final class DNSWiFiMonitor: NSObject, CLLocationManagerDelegate,
         ] {
             try? wifi.startMonitoringEvent(with: event)
         }
+        // CoreWLAN can announce association before SystemConfiguration publishes
+        // an address/router/current service. Reuse the existing event source;
+        // unlike DNSStatusMonitor's value delivery, these hints are not filtered
+        // by equal resolver addresses. There is no readiness polling loop.
+        serviceObserver = DNSDynamicStoreObservation.create(queue: serviceQueue) { [weak self] in
+            self?.changed()
+        }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -135,6 +144,8 @@ public final class DNSWiFiMonitor: NSObject, CLLocationManagerDelegate,
             NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
         }
         wakeObserver = nil
+        serviceObserver?.stop()
+        serviceObserver = nil
         monitoring = false
     }
 

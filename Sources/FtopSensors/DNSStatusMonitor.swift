@@ -148,7 +148,9 @@ private final class DNSDynamicStoreCallback: @unchecked Sendable {
     init(_ notify: @escaping @Sendable () -> Void) { self.notify = notify }
 }
 
-private final class DNSDynamicStoreObservation: DNSStatusObservation {
+/// Shared read-only event source. Wi-Fi rules also need service/IP readiness
+/// hints, including changes that leave the displayed DNS addresses unchanged.
+final class DNSDynamicStoreObservation: DNSStatusObservation {
     private let store: SCDynamicStore
     private init(_ store: SCDynamicStore) { self.store = store }
 

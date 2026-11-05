@@ -107,7 +107,10 @@ protocol DNSWiFiRulesWriteBackend: DNSWriteBackend {
 }
 
 enum DNSChangeTransaction {
-    static func save(_ request: DNSChangeRequest, backend: DNSWriteBackend) throws -> DNSWriteResult {
+    static func save(
+        _ request: DNSChangeRequest, backend: DNSWriteBackend,
+        permitCompetingWriter: Bool = false
+    ) throws -> DNSWriteResult {
         let baseline = try DNSConfigurationSnapshot.decode(request.target)
         let addresses: [String]
         switch request.mode {
@@ -121,7 +124,7 @@ enum DNSChangeTransaction {
         if alreadyMatches {
             return DNSWriteResult(target: try before.target(), state: backend.state(), didChange: false)
         }
-        guard try !backend.externalWriterRunning() else {
+        guard try permitCompetingWriter || !backend.externalWriterRunning() else {
             throw DNSChangeError(code: .externalWriter, message: "Another DNS writer is active. Quit it before saving to avoid conflicting changes.")
         }
         guard !before.protocolExists || before.protocolEnabled else {
@@ -131,7 +134,7 @@ enum DNSChangeTransaction {
         try backend.lock()
         defer { backend.unlock() }
         let locked = try backend.current()
-        guard locked.matches(baseline), try !backend.externalWriterRunning() else { throw conflict() }
+        guard locked.matches(baseline), try permitCompetingWriter || !backend.externalWriterRunning() else { throw conflict() }
         var candidate = locked.configuration ?? [:]
         if addresses.isEmpty { candidate.removeValue(forKey: "ServerAddresses") } else { candidate["ServerAddresses"] = addresses }
         try backend.stage(candidate, createProtocol: !locked.protocolExists)
@@ -253,9 +256,9 @@ final class DNSNativeBackend: DNSWiFiRulesWriteBackend {
         self.preferences = preferences
     }
 
-    /// Establish a native SystemConfiguration right once for the current app
-    /// process. Later Wi-Fi events only check the retained right and never open
-    /// their own background authentication prompt.
+    /// Establish a native SystemConfiguration right. Transactions only check it
+    /// without interaction; the coordinator can renew an expired right outside
+    /// the transaction, then reread the network before making a new request.
     func authorizeAutomationSession() throws {
         try authorize()
         try checkRetainedAuthorization(interactionAllowed: true)
@@ -289,7 +292,7 @@ final class DNSNativeBackend: DNSWiFiRulesWriteBackend {
                 code: status == errAuthorizationCanceled
                     ? .authorizationCancelled : .permissionDenied,
                 message:
-                    "Automatic DNS authorization is unavailable or expired. Open Wi-Fi DNS Rules and save again to authorize it."
+                    "Network authorization is unavailable or expired. No DNS was saved by this authorization check."
             )
         }
     }

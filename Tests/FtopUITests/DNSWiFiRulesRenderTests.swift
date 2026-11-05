@@ -58,6 +58,14 @@ private let dnsRulesRenderDirectory =
                         row.syncTextGeometry()
                     }
                     #expect(!panel.isShown)
+                    if phase == .waiting || phase == .blocked || phase == .needsNetworkAuthorization {
+                        let label = content.statusMessage
+                        let measured = (label.stringValue as NSString).boundingRect(
+                            with: NSSize(width: label.bounds.width, height: .greatestFiniteMagnitude),
+                            options: [.usesLineFragmentOrigin, .usesFontLeading],
+                            attributes: [.font: try #require(label.font)])
+                        #expect(measured.height <= label.bounds.height + 1)
+                    }
                 }
             }
         }
@@ -80,13 +88,16 @@ private let dnsRulesRenderDirectory =
                     (DNSWiFiRulesStatus.Phase.off, PanelStyle.dnsRulesWidth),
                     (.active, PanelStyle.dnsRulesWidth),
                     (.active, PanelStyle.dnsRulesCompactWidth),
+                    (.waiting, PanelStyle.dnsRulesWidth),
                     (.waiting, PanelStyle.dnsRulesCompactWidth),
                     (.needsWiFiAccess, PanelStyle.dnsRulesCompactWidth),
                     (
                         .needsNetworkAuthorization,
                         PanelStyle.dnsRulesCompactWidth
                     ),
+                    (.needsNetworkAuthorization, PanelStyle.dnsRulesWidth),
                     (.blocked, PanelStyle.dnsRulesCompactWidth),
+                    (.blocked, PanelStyle.dnsRulesWidth),
                     (.applying, PanelStyle.dnsRulesCompactWidth),
                 ] {
                     let panel = fixture(phase)
@@ -131,20 +142,20 @@ private let dnsRulesRenderDirectory =
                 "启用自动切换后即可使用默认 DNS 规则。")
         case .waiting:
             message = Strings.pick(
-                "Waiting for a connected Wi-Fi network.",
-                "正在等待 Wi-Fi 连接。")
+                "Waiting for network readiness. Network changes will recheck DNS.",
+                "等待网络就绪，DNS 保持不变；网络信息更新后会重新检查。")
         case .needsWiFiAccess:
             message = Strings.pick(
                 "Allow Wi-Fi name access. Location is used only for the connected network name.",
                 "请允许读取 Wi-Fi 名称；定位权限仅用于当前网络名称。")
         case .needsNetworkAuthorization:
             message = Strings.pick(
-                "Authorize this app session before the matching rule can be written.",
-                "请授权本次应用运行，才能写入匹配规则。")
+                "Waiting for macOS network authorization. DNS will be rechecked afterward.",
+                "等待 macOS 网络授权，完成后会重新检查当前网络与 DNS。")
         case .blocked:
             message = Strings.pick(
-                "Another DNS change was detected. Automatic retries stopped for this connection.",
-                "检测到其他 DNS 修改，此连接已停止自动重试。")
+                "DNS changed over 5 times in 60 s. Keeping external DNS until reconnect or Save & Apply.",
+                "60 秒内 DNS 被改写超过 5 次，已保留外部设置；重连或重新保存规则可恢复。")
         case .applying:
             message = Strings.pick(
                 "Writing and verifying the matching rule.",
@@ -163,7 +174,7 @@ private let dnsRulesRenderDirectory =
                 servers: phase == .off
                     ? [] : ["1.1.1.1", "2001:db8::53"],
                 message: message),
-            palette: .sea, busy: phase == .applying)
+            palette: .sea, busy: phase == .applying || phase == .needsNetworkAuthorization)
         return panel
     }
 

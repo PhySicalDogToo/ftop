@@ -584,14 +584,30 @@ only the one-shot-only boundary above. Proxy-client cooperation remains retired.
   Its concise help calls the first address preferred and the second alternate while
   stating that macOS does not guarantee strict primary/backup failover.
 - Save & Apply validates and stores the complete draft, explicitly requests Wi-Fi
-  name access when needed, obtains native session authorization, and evaluates the
-  current connection once. Subsequent evaluation comes from Wi-Fi link/name/power
-  events and wake only. There is no timer or continuous enforcement loop.
+  name access when needed, evaluates the current connection and prepares native
+  session authorization. After successful authorization,
+  reread and rematch the current network before doing anything with DNS. Subsequent
+  evaluation comes from Wi-Fi link/name/power, SystemConfiguration service/IP/DNS
+  events and wake. The 2026-11-04 owner request adds bounded reassertion on external
+  DNS changes; there is still no polling timer.
+- A pre-write service-readiness gap shows a neutral waiting state, not a permanent
+  error. SSID, matched rule, DNS and execution state refresh together. Readiness
+  hints can continue that check even when the SSID or resolver addresses do not
+  change. When an expired authorization denies a write before any saved change,
+  ask once with the native macOS authorization dialog, then reread/rematch the
+  current network (2026-11-06). Cancellation, failed authorization or another denial
+  after that grant requires Save & Apply to retry; no repeated prompt loop.
+  Actual failed or uncertain writes keep their existing association block.
 - Reuse the native service identification and transaction kernel's immutable baseline,
   conflict checks, non-waiting lock, commit/apply and full readback verification.
   Recheck SSID, interface, service and configuration immediately before mutation.
-- A full external DNS change or failed/uncertain write blocks another attempt on
-  the same association. A new association creates one new opportunity. Update/quit
+- External DNS address changes away from the rule are reasserted for the first
+  five observed changes in a rolling 60-second window. The sixth keeps the external
+  value and pauses forced writes on that association until a new connection or
+  explicit Save & Apply. Repeated hints, own verified writes and unrelated fields
+  do not count. The paused message explains the threshold and recovery. Native
+  authorization is mandatory and failed/uncertain writes still stop immediately.
+  A new association resets the budget. Update/quit
   guards cover in-flight rule work; there is no second writer UI to coordinate.
 - Location permission exists only to obtain the current Wi-Fi name. Rules never
   scan networks, change routing, use a helper or shell, inspect proxy clients, touch

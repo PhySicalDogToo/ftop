@@ -21,6 +21,7 @@ let package = Package(
         .testTarget(name: "FtopCoreTests", dependencies: ["FtopCore"]),
         .testTarget(name: "FtopSensorsTests", dependencies: ["FtopCore", "FtopSensors"]),
         .testTarget(name: "FtopUITests", dependencies: ["FtopCore", "FtopUI"]),
+        .testTarget(name: "FtopAppTests", dependencies: ["FtopApp", "FtopCore", "FtopSensors"]),
     ],
     swiftLanguageModes: [.v6]
 )

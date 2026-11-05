@@ -16,13 +16,30 @@ with the floating monitor. Do not restore any Clash/Mihomo/TUN cooperation.
   still no-ops. See `docs/plans/2026-10-29-default-dns-rule.md`.
 - Save & Apply stores the draft, obtains explicit Wi-Fi-name access and native
   session authorization when required, then evaluates the current connection.
-- React to native Wi-Fi association/link/power/name events and wake. Do not poll,
-  continuously enforce, use a shell/helper, or put work on the monitor sample path.
+- React to native Wi-Fi association/link/power/name/configuration events and wake.
+  The 2026-11-04 owner request adds bounded event-driven DNS reassertion; do not
+  poll, use a shell/helper, or put work on the monitor sample path.
+- After administrator authorization, discard all tentative inputs and reread Wi-Fi,
+  physical service, connection identity and DNS before matching again. Location
+  authorization reuses the existing monitor callback and coalesced evaluation.
+- Pre-transaction `noPhysicalService` waits for readiness without blocking that
+  association. Native SystemConfiguration service/IP/link/configuration hints share
+  the Wi-Fi event queue, including when effective DNS addresses remain unchanged.
+- Publish SSID, selected rule, DNS and phase together. Opening enabled rules uses
+  a full evaluation instead of retaining an old rule/error after a passive read.
+- Authorization cancellation/failure suppresses new prompts until explicit Save &
+  Apply. A confirmed no-write authorization denial on a retained session now
+  requests one renewal prompt automatically (2026-11-06), then rereads and rematches
+  the network. Saved/unknown results never retry. Successful unchanged matches
+  never need a DNS write or credential renewal. No observer or
+  readiness loop bypasses failed-write or repeated-contention protection.
 - Reuse DNSChangeTransaction and its native backend for service identity, immutable baselines,
   lock/commit/apply/readback, complete field preservation, and conflict handling.
 - Detect a changed SSID/interface/service/configuration immediately before mutation.
-  Block repeat attempts on the same association after an external DNS change or an
-  uncertain/failed write. Allow one new evaluation after a genuine association.
+  Reassert the first five observed off-rule DNS address changes within a rolling
+  60 seconds; the sixth yields that association to the external value until a new
+  connection or explicit save. Uncertain/failed writes still block immediately.
+  Metadata-only changes, duplicate hints and verified own writes do not count.
 - Keep FtopUI value-only and AppKit-native. Use Theme-owned main-panel palette,
   metrics and rounded tracks; preserve drafts and fit both compact and wide forms.
 - Never inspect, configure, reload, back up or call any proxy client or controller.
