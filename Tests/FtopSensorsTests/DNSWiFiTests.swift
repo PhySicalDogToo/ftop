@@ -5,7 +5,7 @@ import Testing
 @Suite struct DNSWiFiTests {
     @Test func missingPermissionNeverUsesAName() {
         for permission in [
-            DNSWiFiPermission.notDetermined, .denied, .restricted,
+            DNSWiFiPermission.notDetermined, .denied, .restricted, .locationServicesDisabled,
         ] {
             let value = DNSWiFiReader.selected(
                 ssid: "Office", interfaceName: "en0", connected: true,

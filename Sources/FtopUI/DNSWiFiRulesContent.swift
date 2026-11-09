@@ -500,6 +500,8 @@ final class DNSWiFiRulesContent: NSView {
         case .waiting: Strings.pick("Waiting for network", "等待网络就绪")
         case .needsWiFiAccess:
             Strings.pick("Wi-Fi name access required", "需要读取 Wi-Fi 名称")
+        case .locationServicesDisabled:
+            Strings.pick("Location Services are off", "系统定位服务已关闭")
         case .needsNetworkAuthorization:
             Strings.pick("Network authorization required", "需要网络授权")
         case .applying: Strings.pick("Applying DNS…", "正在应用 DNS…")
@@ -512,7 +514,7 @@ final class DNSWiFiRulesContent: NSView {
         switch phase {
         case .active: PanelStyle.normalColor
         case .blocked: PanelStyle.criticalColor
-        case .needsWiFiAccess, .needsNetworkAuthorization:
+        case .needsWiFiAccess, .locationServicesDisabled, .needsNetworkAuthorization:
             PanelStyle.warningColor
         default: PanelStyle.secondaryColor
         }

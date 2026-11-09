@@ -27,6 +27,8 @@ protocol DNSWiFiRulesMonitoring: AnyObject {
     func start()
     func stop()
     func requestAccess()
+    func checkPermission() async -> DNSWiFiPermission
+    func openLocationSettings() async -> Bool
 }
 
 extension DNSWiFiMonitor: DNSWiFiRulesMonitoring {}
@@ -112,12 +114,10 @@ final class DNSWiFiRulesCoordinator {
             return
         }
         wifi.start()
-        if wifi.permission == .authorized {
-            requestEvaluation()
-        } else {
+        if wifi.permission != .authorized {
             status = needsWiFiAccessStatus()
-            changed()
         }
+        requestEvaluation()
     }
 
     func show() {
@@ -135,7 +135,7 @@ final class DNSWiFiRulesCoordinator {
         panel?.present(
             configuration: configuration, status: status,
             palette: palette?() ?? .sea, busy: actions > 0 || evaluation != nil)
-        if rulesActive, wifi.permission == .authorized { requestEvaluation() } else { refreshPassive() }
+        if rulesActive { requestEvaluation() } else { refreshPassive() }
     }
 
     func shutdown() {
@@ -199,11 +199,6 @@ final class DNSWiFiRulesCoordinator {
         }
 
         wifi.start()
-        guard wifi.permission == .authorized else {
-            status = needsWiFiAccessStatus()
-            if wifi.permission == .notDetermined { wifi.requestAccess() }
-            return saved
-        }
         await evaluate(prepareSession: true)
         if Task.isCancelled || stopped {
             pendingEvent = false
@@ -214,33 +209,30 @@ final class DNSWiFiRulesCoordinator {
         return saved
     }
 
-    private func requestWiFiAccess() async throws {
-        switch wifi.permission {
+    func requestWiFiAccess() async throws {
+        let token = epoch
+        let permission = await wifi.checkPermission()
+        try Task.checkCancellation()
+        guard !stopped, token == epoch else { return }
+        switch permission {
         case .authorized:
-            requestEvaluation()
+            if rulesActive { requestEvaluation() } else { refreshPassive() }
         case .notDetermined:
             status = needsWiFiAccessStatus()
             changed()
             wifi.requestAccess()
-        case .denied, .restricted:
-            status = needsWiFiAccessStatus()
+        case .denied, .restricted, .locationServicesDisabled:
+            status = needsWiFiAccessStatus(permission)
             changed()
-            if let url = URL(
-                string:
-                    "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices"
-            ) {
-                NSWorkspace.shared.open(url)
+            if await !wifi.openLocationSettings() {
+                throw failure(
+                    "Open System Settings → Privacy & Security → Location Services.",
+                    "请手动打开「系统设置 → 隐私与安全 → 定位服务」。")
             }
         }
     }
 
     private func networkChanged() {
-        guard !stopped else { return }
-        if wifi.permission != .authorized {
-            status = needsWiFiAccessStatus()
-            changed()
-            return
-        }
         requestEvaluation()
     }
 
@@ -287,13 +279,22 @@ final class DNSWiFiRulesCoordinator {
             changed()
             return
         }
-        guard wifi.permission == .authorized else {
-            status = needsWiFiAccessStatus()
-            changed()
-            return
+        let token = epoch
+        if wifi.permission != .authorized {
+            let permission = await wifi.checkPermission()
+            if permission != .authorized {
+                let servers =
+                    panel?.isShown == true
+                    ? await Task.detached(priority: .utility) { [readDNS] in readDNS().servers }.value
+                    : nil
+                guard !stopped, !Task.isCancelled, token == epoch else { return }
+                status = needsWiFiAccessStatus(permission, servers: servers)
+                changed()
+                if prepareSession, permission == .notDetermined { wifi.requestAccess() }
+                return
+            }
         }
 
-        let token = epoch
         var didAuthorize = false
         var needsAuthorization = false
         // At most one authorization per evaluation. Its continuation starts with
@@ -533,21 +534,22 @@ final class DNSWiFiRulesCoordinator {
         guard panel?.isShown == true, actions == 0, evaluation == nil else { return }
         passiveRead?.cancel()
         let token = epoch
-        let permission = wifi.permission
         passiveRead = Task { [weak self, readWiFi, readDNS] in
+            guard let self else { return }
+            let permission = wifi.permission == .authorized ? .authorized : await wifi.checkPermission()
             let (reading, dns) = await Task.detached(priority: .utility) { [readWiFi, readDNS] in
                 (
                     readWiFi(permission), readDNS()
                 )
             }.value
-            guard !Task.isCancelled, let self, !stopped, token == epoch,
+            guard !Task.isCancelled, !stopped, token == epoch,
                 actions == 0, evaluation == nil
             else { return }
             status = initialStatus(configuration)
             status.ssid = reading.ssid
             status.servers = dns.servers
-            if rulesActive, permission != .authorized {
-                status = needsWiFiAccessStatus(servers: dns.servers)
+            if permission == .locationServicesDisabled {
+                status = needsWiFiAccessStatus(permission, servers: dns.servers)
             }
             changed()
         }
@@ -616,11 +618,20 @@ final class DNSWiFiRulesCoordinator {
     }
 
     private func needsWiFiAccessStatus(
-        servers: [String] = []
+        _ permission: DNSWiFiPermission = .notDetermined,
+        servers: [String]? = nil
     ) -> DNSWiFiRulesStatus {
-        DNSWiFiRulesStatus(
+        if permission == .locationServicesDisabled {
+            return DNSWiFiRulesStatus(
+                phase: .locationServicesDisabled,
+                servers: servers ?? status.servers,
+                message: Strings.pick(
+                    "Use Wi-Fi Access to turn on Location Services, then allow Ftop to read the Wi-Fi name.",
+                    "点「Wi-Fi 权限…」打开定位服务，开启总开关，再允许 Ftop 读取 Wi-Fi 名称。"))
+        }
+        return DNSWiFiRulesStatus(
             phase: .needsWiFiAccess,
-            servers: servers.isEmpty ? status.servers : servers,
+            servers: servers ?? status.servers,
             message: Strings.pick(
                 "macOS location permission is used only to read the connected Wi-Fi name. No DNS is changed without it.",
                 "macOS 定位权限仅用于读取当前 Wi-Fi 名称；没有该权限不会修改 DNS。"))

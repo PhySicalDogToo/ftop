@@ -612,6 +612,9 @@ only the one-shot-only boundary above. Proxy-client cooperation remains retired.
 - Location permission exists only to obtain the current Wi-Fi name. Rules never
   scan networks, change routing, use a helper or shell, inspect proxy clients, touch
   proxy files, or call proxy control interfaces.
+- If the system Location Services switch is off, show that reason in the rules
+  window. Wi-Fi Access opens the Location Services page when system or app access
+  is unavailable. First-time access still uses the system authorization prompt.
 - Existing version-1 rule data migrates to an Automatic default. A completely new
   configuration keeps the global Automatic switching control off until explicitly
   saved, so first launch cannot prompt or write merely because a default exists.

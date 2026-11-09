@@ -126,6 +126,48 @@ import Testing
         #expect(await fixture.runtime.writes.isEmpty)
     }
 
+    @Test func disabledLocationServicesExplainTheBlockAndOpenSettings() async throws {
+        let fixture = try Fixture(permission: .denied)
+        defer { fixture.close() }
+        fixture.monitor.servicesEnabled = false
+        let coordinator = fixture.coordinator
+        coordinator.start()
+        try await eventually { !coordinator.isBusy }
+        #expect(coordinator.status.phase == .locationServicesDisabled)
+
+        let saved = try await coordinator.save(fixture.configuration)
+        #expect(saved == fixture.configuration)
+        #expect(coordinator.status.phase == .locationServicesDisabled)
+        try await coordinator.requestWiFiAccess()
+        #expect(fixture.monitor.settingsOpenCount == 1)
+        #expect(fixture.monitor.accessRequestCount == 0)
+        #expect(await fixture.runtime.authorizationCount == 0)
+        #expect(await fixture.runtime.writes.isEmpty)
+
+        fixture.monitor.servicesEnabled = true
+        fixture.network.select("Office", service: "office-service", address: nil)
+        fixture.monitor.permission = .authorized
+        fixture.monitor.onChange?()
+        try await eventually { !coordinator.isBusy }
+        #expect(coordinator.status.phase == .active)
+        #expect(coordinator.status.ssid == "Office")
+    }
+
+    @Test func appDenialAndFirstTimeAccessStayDistinctFromSystemLocationOff() async throws {
+        let fixture = try Fixture(permission: .denied)
+        defer { fixture.close() }
+        try await fixture.coordinator.requestWiFiAccess()
+        #expect(fixture.coordinator.status.phase == .needsWiFiAccess)
+        #expect(fixture.monitor.settingsOpenCount == 1)
+        #expect(fixture.monitor.accessRequestCount == 0)
+
+        fixture.monitor.permission = .notDetermined
+        try await fixture.coordinator.requestWiFiAccess()
+        #expect(fixture.coordinator.status.phase == .needsWiFiAccess)
+        #expect(fixture.monitor.settingsOpenCount == 1)
+        #expect(fixture.monitor.accessRequestCount == 1)
+    }
+
     @Test func unavailableServiceBeforeAnyWriteWaitsWithoutOpeningAuthorization() async throws {
         let fixture = try Fixture()
         defer { fixture.close() }
@@ -557,11 +599,21 @@ private final class Fixture {
 @MainActor
 private final class MonitorFixture: DNSWiFiRulesMonitoring {
     var permission = DNSWiFiPermission.authorized
+    var servicesEnabled = true
     var onChange: (() -> Void)?
     var startCount = 0
+    var accessRequestCount = 0
+    var settingsOpenCount = 0
     func start() { startCount += 1 }
     func stop() {}
-    func requestAccess() {}
+    func requestAccess() { accessRequestCount += 1 }
+    func checkPermission() async -> DNSWiFiPermission {
+        servicesEnabled ? permission : .locationServicesDisabled
+    }
+    func openLocationSettings() async -> Bool {
+        settingsOpenCount += 1
+        return true
+    }
 }
 
 private actor RuntimeFixture: DNSWiFiRulesRunning {

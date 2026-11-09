@@ -58,7 +58,7 @@ private let dnsRulesRenderDirectory =
                         row.syncTextGeometry()
                     }
                     #expect(!panel.isShown)
-                    if phase == .waiting || phase == .blocked || phase == .needsNetworkAuthorization {
+                    if phase == .waiting || phase == .blocked || phase == .needsNetworkAuthorization || phase == .locationServicesDisabled {
                         let label = content.statusMessage
                         let measured = (label.stringValue as NSString).boundingRect(
                             with: NSSize(width: label.bounds.width, height: .greatestFiniteMagnitude),
@@ -91,6 +91,8 @@ private let dnsRulesRenderDirectory =
                     (.waiting, PanelStyle.dnsRulesWidth),
                     (.waiting, PanelStyle.dnsRulesCompactWidth),
                     (.needsWiFiAccess, PanelStyle.dnsRulesCompactWidth),
+                    (.locationServicesDisabled, PanelStyle.dnsRulesCompactWidth),
+                    (.locationServicesDisabled, PanelStyle.dnsRulesWidth),
                     (
                         .needsNetworkAuthorization,
                         PanelStyle.dnsRulesCompactWidth
@@ -148,6 +150,10 @@ private let dnsRulesRenderDirectory =
             message = Strings.pick(
                 "Allow Wi-Fi name access. Location is used only for the connected network name.",
                 "请允许读取 Wi-Fi 名称；定位权限仅用于当前网络名称。")
+        case .locationServicesDisabled:
+            message = Strings.pick(
+                "Use Wi-Fi Access to turn on Location Services, then allow Ftop to read the Wi-Fi name.",
+                "点「Wi-Fi 权限…」打开定位服务，开启总开关，再允许 Ftop 读取 Wi-Fi 名称。")
         case .needsNetworkAuthorization:
             message = Strings.pick(
                 "Waiting for macOS network authorization. DNS will be rechecked afterward.",
@@ -168,8 +174,8 @@ private let dnsRulesRenderDirectory =
         panel.prepare(
             configuration: configuration,
             status: DNSWiFiRulesStatus(
-                phase: phase, ssid: phase == .off ? nil : "Home",
-                matchedSSID: phase == .off || phase == .active ? nil : "Home",
+                phase: phase, ssid: phase == .off || phase == .locationServicesDisabled ? nil : "Home",
+                matchedSSID: phase == .off || phase == .active || phase == .locationServicesDisabled ? nil : "Home",
                 usesDefault: phase == .active,
                 servers: phase == .off
                     ? [] : ["1.1.1.1", "2001:db8::53"],
@@ -204,7 +210,7 @@ private let dnsRulesRenderDirectory =
 
 extension DNSWiFiRulesStatus.Phase {
     fileprivate static let allReferenceCases: [Self] = [
-        .off, .waiting, .needsWiFiAccess, .needsNetworkAuthorization,
+        .off, .waiting, .needsWiFiAccess, .locationServicesDisabled, .needsNetworkAuthorization,
         .applying, .active, .blocked,
     ]
 }

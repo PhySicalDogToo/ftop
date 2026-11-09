@@ -79,9 +79,10 @@ Unavailable hardware readings remain unavailable instead of being displayed as z
 
 ## Build and install
 
-Requirements: Apple Silicon and macOS 15 or later, with Xcode command-line tools.
-This personal repository currently documents source builds rather than publishing
-an official release package.
+The personal build runs on Apple Silicon with macOS 15 or later. Download the
+ZIP, extract it, and move `Ftop.app` into Applications. [GitHub Releases](https://github.com/PhySicalDogToo/ftop/releases/latest)
+
+Building from source requires the Xcode command-line tools.
 
 ```bash
 git clone git@github.com:PhySicalDogToo/ftop.git
@@ -112,10 +113,9 @@ ftop doctor --network   # inspect process-network collection
 
 ## Validation and scope
 
-The current build is `0.2.6 (18)`. `scripts/check.sh` validates strict formatting, a
-warning-free build and two complete test runs. DNS writes in tests use
-fake backends; the validation record and UI references live in
-[`docs/evidence/2026-11-06-dns-authorization-renewal/`](docs/evidence/2026-11-06-dns-authorization-renewal/).
+The current build is `0.2.6 (19)`. `scripts/check.sh` validates strict formatting, a
+warning-free build and two complete test runs. DNS writes in tests use fake
+backends. [Build 19 validation](docs/progress/2026-11-09.md)
 
 ftop supports English and Chinese. It intentionally has no history graphs or disk
 panel. Private macOS sensor APIs can change with a system update; missing values are

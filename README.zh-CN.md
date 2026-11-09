@@ -70,8 +70,10 @@ ftop dns --json
 
 ## 构建和安装
 
-要求：Apple Silicon、macOS 15 或更高版本，并安装 Xcode 命令行工具。
-这个人仓库目前以源码构建为主，不作为上游官方发布页。
+个人版适用于 Apple Silicon 和 macOS 15 或更高版本。下载 ZIP，解压后将 `Ftop.app`
+移入「应用程序」。[GitHub 下载页](https://github.com/PhySicalDogToo/ftop/releases/latest)
+
+从源码构建需要安装 Xcode 命令行工具。
 
 ```bash
 git clone git@github.com:PhySicalDogToo/ftop.git
@@ -100,9 +102,8 @@ ftop doctor --network   # 检查进程网络采集
 
 ## 验证和边界
 
-当前构建为 `0.2.6 (18)`。`scripts/check.sh` 检查严格格式、无警告构建，并运行两轮完整测试。
-DNS 写入测试全部使用模拟后端；验证记录和界面参考图位于
-[`docs/evidence/2026-11-06-dns-authorization-renewal/`](docs/evidence/2026-11-06-dns-authorization-renewal/)。
+当前构建为 `0.2.6 (19)`。`scripts/check.sh` 检查严格格式、无警告构建，并运行两轮完整测试。
+DNS 写入测试全部使用模拟后端。[构建 19 验证记录](docs/progress/2026-11-09.md)
 
 ftop 支持中文和英文，故意不加入历史曲线和磁盘面板。macOS 私有传感器接口可能随系统
 版本变化，缺失读数会如实标记。

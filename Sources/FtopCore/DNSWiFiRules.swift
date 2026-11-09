@@ -154,7 +154,7 @@ public enum DNSWiFiRulesValidationError: LocalizedError, Sendable, Equatable {
 /// Value-only presentation state shared with the AppKit rules editor.
 public struct DNSWiFiRulesStatus: Sendable, Equatable {
     public enum Phase: String, Sendable, Equatable {
-        case off, waiting, needsWiFiAccess, needsNetworkAuthorization, applying,
+        case off, waiting, needsWiFiAccess, locationServicesDisabled, needsNetworkAuthorization, applying,
             active, blocked
     }
 

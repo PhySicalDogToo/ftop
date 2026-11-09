@@ -4,7 +4,7 @@ import CoreLocation
 import Foundation
 
 public enum DNSWiFiPermission: String, Sendable {
-    case notDetermined, authorized, denied, restricted
+    case notDetermined, authorized, denied, restricted, locationServicesDisabled
 }
 
 public struct DNSWiFiReading: Sendable, Equatable {
@@ -104,6 +104,28 @@ public final class DNSWiFiMonitor: NSObject, CLLocationManagerDelegate,
         case .notDetermined: .notDetermined
         @unknown default: .restricted
         }
+    }
+
+    /// Core Location reports a disabled system switch as app-level denial.
+    /// Resolve the distinction off the main thread when presenting access status.
+    public func checkPermission() async -> DNSWiFiPermission {
+        let enabled = await Task.detached(priority: .utility) {
+            CLLocationManager.locationServicesEnabled()
+        }.value
+        return enabled ? permission : .locationServicesDisabled
+    }
+
+    public func openLocationSettings() async -> Bool {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        for destination in [
+            "com.apple.settings.PrivacySecurity.extension",
+            "com.apple.preference.security",
+        ] {
+            guard let url = URL(string: "x-apple.systempreferences:\(destination)?Privacy_LocationServices") else { continue }
+            if (try? await NSWorkspace.shared.open(url, configuration: configuration)) != nil { return true }
+        }
+        return false
     }
 
     public func requestAccess() {
